@@ -10,6 +10,8 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -21,6 +23,9 @@ import com.example.customcontrols.utils.ControlUtils;
 import com.example.input.InputBridge;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 
 /**
  * Custom HUD Button supporting text labels and custom PNG background icons.
@@ -166,11 +171,37 @@ public class ControlButton extends Button implements ControlInterface {
         mParentLayout.setManagedViewPosition(this, x, y);
     }
 
+    private final Handler macroHandler = new Handler(Looper.getMainLooper());
+
     @Override
     public void sendKeyPresses(boolean isDown) {
         if (mProperties.keycodes == null) return;
+        List<Integer> activeCodes = new ArrayList<>();
+        HashSet<Integer> seen = new HashSet<>();
+        boolean hasDuplicate = false;
         for (int kc : mProperties.keycodes) {
             if (kc != 0) {
+                activeCodes.add(kc);
+                if (!seen.add(kc)) {
+                    hasDuplicate = true;
+                }
+            }
+        }
+        if (activeCodes.isEmpty()) return;
+
+        boolean runSequential = (mProperties.macroSequential || hasDuplicate) && activeCodes.size() > 1;
+        if (runSequential) {
+            if (!isDown) return;
+            macroHandler.removeCallbacksAndMessages(null);
+            for (int i = 0; i < activeCodes.size(); i++) {
+                final int code = activeCodes.get(i);
+                long pressDelay = i * 50L;
+                long releaseDelay = pressDelay + 28L;
+                macroHandler.postDelayed(() -> InputBridge.sendKey(code, true), pressDelay);
+                macroHandler.postDelayed(() -> InputBridge.sendKey(code, false), releaseDelay);
+            }
+        } else {
+            for (int kc : activeCodes) {
                 InputBridge.sendKey(kc, isDown);
             }
         }
@@ -225,6 +256,9 @@ public class ControlButton extends Button implements ControlInterface {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (mParentLayout.isPositionsLocked()) {
+                    return true;
+                }
                 float dx = event.getRawX() - downRawX;
                 float dy = event.getRawY() - downRawY;
                 if (!hasMoved && Math.hypot(dx, dy) > touchSlop) {

@@ -255,4 +255,94 @@ class ExampleRobolectricTest {
         assertTrue(ControlLayoutManager.deletePreset(context, renamed))
         assertTrue(ControlLayoutManager.deletePreset(context, created))
     }
+
+    @Test
+    fun `gyroscope crosshair haptics and changelog preferences persist and clamp properly`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        ControlLayoutManager.setGyroEnabled(context, true)
+        ControlLayoutManager.setGyroMode(context, 99)
+        ControlLayoutManager.setGyroSensX(context, 12.5f)
+        ControlLayoutManager.setGyroSensY(context, 0.05f)
+        ControlLayoutManager.setGyroInvertX(context, true)
+        ControlLayoutManager.setGyroInvertY(context, false)
+        ControlLayoutManager.setGyroSmoothing(context, 1.8f)
+
+        assertTrue(ControlLayoutManager.isGyroEnabled(context))
+        assertEquals(2, ControlLayoutManager.getGyroMode(context))
+        assertEquals(8.0f, ControlLayoutManager.getGyroSensX(context), 0.01f)
+        assertEquals(0.2f, ControlLayoutManager.getGyroSensY(context), 0.01f)
+        assertTrue(ControlLayoutManager.isGyroInvertX(context))
+        assertFalse(ControlLayoutManager.isGyroInvertY(context))
+        assertEquals(1.0f, ControlLayoutManager.getGyroSmoothing(context), 0.01f)
+
+        ControlLayoutManager.setCrosshairEnabled(context, true)
+        ControlLayoutManager.setCrosshairStyle(context, 3)
+        assertTrue(ControlLayoutManager.isCrosshairEnabled(context))
+        assertEquals(3, ControlLayoutManager.getCrosshairStyle(context))
+
+        ControlLayoutManager.setHapticEnabled(context, false)
+        assertFalse(ControlLayoutManager.isHapticEnabled(context))
+
+        ControlLayoutManager.setAutoPauseAimOnMenu(context, false)
+        assertFalse(ControlLayoutManager.isAutoPauseAimOnMenu(context))
+
+        ControlLayoutManager.setPositionsLocked(context, true)
+        assertTrue(ControlLayoutManager.isPositionsLocked(context))
+
+        ControlLayoutManager.setLastSeenChangelogVersionCode(context, BuildConfig.VERSION_CODE)
+        assertEquals(BuildConfig.VERSION_CODE, ControlLayoutManager.getLastSeenChangelogVersionCode(context))
+    }
+
+    @Test
+    fun `minecraft java and blank canvas presets plus sequential macro serialize accurately`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val layouts = ControlLayoutManager.listLayouts(context)
+        assertTrue(layouts.any { it.fileName == ControlLayoutManager.DEFAULT_MINECRAFT_FILE && it.gameName == "Minecraft Java" })
+        assertTrue(layouts.any { it.fileName == ControlLayoutManager.DEFAULT_BLANK_FILE && it.gameName == "Blank Canvas" && it.buttonCount == 0 })
+
+        val custom = ControlLayoutManager.createBlankCanvasPreset()
+        custom.mControlDataList.add(
+            ControlData(
+                "Combo",
+                intArrayOf(LwjglGlfwKeycode.GLFW_KEY_E, LwjglGlfwKeycode.GLFW_KEY_F, LwjglGlfwKeycode.GLFW_KEY_R, 0),
+                "0.5 * \${screen_width}",
+                "0.5 * \${screen_height}",
+                60f,
+                50f
+            ).apply {
+                macroSequential = true
+            }
+        )
+        val roundTripped = CustomControls.fromJson(custom.toJson())
+        assertEquals(1, roundTripped.mControlDataList.size)
+        assertTrue(roundTripped.mControlDataList.first().macroSequential)
+    }
+
+    @Test
+    fun `input bridge dispatches toggle gyro special action and menu key auto-pause triggers`() {
+        var gyroToggleHits = 0
+        var menuKeyHits = 0
+        com.example.input.InputBridge.setSpecialActionListener { code, isDown ->
+            if (code == LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO && isDown) {
+                gyroToggleHits++
+            }
+        }
+        com.example.input.InputBridge.setMenuKeyListener { code ->
+            if (code == LwjglGlfwKeycode.GLFW_KEY_ESCAPE || code == LwjglGlfwKeycode.GLFW_KEY_TAB || code == LwjglGlfwKeycode.GLFW_KEY_M) {
+                menuKeyHits++
+            }
+        }
+
+        com.example.input.InputBridge.sendKey(LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO, true)
+        com.example.input.InputBridge.sendKey(LwjglGlfwKeycode.GLFW_KEY_ESCAPE, true)
+        com.example.input.InputBridge.sendKey(LwjglGlfwKeycode.GLFW_KEY_TAB, true)
+        com.example.input.InputBridge.sendKey(LwjglGlfwKeycode.GLFW_KEY_M, true)
+
+        assertEquals(1, gyroToggleHits)
+        assertEquals(3, menuKeyHits)
+
+        com.example.input.InputBridge.setSpecialActionListener(null)
+        com.example.input.InputBridge.setMenuKeyListener(null)
+    }
 }

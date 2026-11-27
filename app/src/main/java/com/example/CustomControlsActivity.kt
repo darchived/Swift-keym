@@ -101,6 +101,8 @@ class CustomControlsActivity : ComponentActivity() {
             isModifiable = true
             aimSensitivity = ControlLayoutManager.getAimSensitivity(this@CustomControlsActivity)
             isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this@CustomControlsActivity)
+            isHapticEnabled = ControlLayoutManager.isHapticEnabled(this@CustomControlsActivity)
+            isPositionsLocked = ControlLayoutManager.isPositionsLocked(this@CustomControlsActivity)
             loadLayout(ControlLayoutManager.loadActiveLayout(this@CustomControlsActivity))
             globalOpacity = ControlLayoutManager.getGlobalOpacity(this@CustomControlsActivity)
             setImagePickListener { callback ->
@@ -284,25 +286,19 @@ class CustomControlsActivity : ComponentActivity() {
         globalOpacityPct.text = String.format(Locale.US, "%d%%", pct)
     }
 
-    private fun notifyOverlayOpacityIfRunning() {
+    private fun notifyOverlayActionIfRunning(overlayAction: String) {
         if (OverlayService.isRunning.value) {
             startService(
                 Intent(this, OverlayService::class.java).apply {
-                    action = OverlayService.ACTION_UPDATE_OPACITY
+                    action = overlayAction
                 }
             )
         }
     }
 
-    private fun notifyOverlayRippleIfRunning() {
-        if (OverlayService.isRunning.value) {
-            startService(
-                Intent(this, OverlayService::class.java).apply {
-                    action = OverlayService.ACTION_UPDATE_RIPPLE
-                }
-            )
-        }
-    }
+    private fun notifyOverlayOpacityIfRunning() = notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_OPACITY)
+
+    private fun notifyOverlayRippleIfRunning() = notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_RIPPLE)
 
     private fun updateHistoryButtons(canUndo: Boolean, canRedo: Boolean) {
         val editing = controlLayout.isModifiable
@@ -377,6 +373,11 @@ class CustomControlsActivity : ComponentActivity() {
                     val next = ControlUtils.clamp(controlLayout.aimSensitivity + delta, 0.2f, 5.0f)
                     controlLayout.aimSensitivity = next
                     ControlLayoutManager.setAimSensitivity(this@CustomControlsActivity, next)
+                    notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_SENSITIVITY)
+                }
+
+                override fun onAimSensitivitySet(sensitivity: Float) {
+                    notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_SENSITIVITY)
                 }
 
                 override fun onExportControlMap() {
@@ -395,6 +396,18 @@ class CustomControlsActivity : ComponentActivity() {
 
                 override fun onTouchRippleToggled(enabled: Boolean) {
                     notifyOverlayRippleIfRunning()
+                }
+
+                override fun onGyroSettingsChanged() {
+                    notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_GYRO)
+                }
+
+                override fun onHapticToggled(enabled: Boolean) {
+                    notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_HAPTICS)
+                }
+
+                override fun onPositionsLockToggled(locked: Boolean) {
+                    notifyOverlayActionIfRunning(OverlayService.ACTION_UPDATE_LOCK)
                 }
 
                 override fun onExitHost() {

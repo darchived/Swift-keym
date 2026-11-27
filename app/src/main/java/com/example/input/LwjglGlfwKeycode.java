@@ -22,6 +22,7 @@ public final class LwjglGlfwKeycode {
     public static final int SPECIALBTN_SCROLLUP = -6;
     public static final int SPECIALBTN_SCROLLDOWN = -7;
     public static final int SPECIALBTN_MENU = -8;
+    public static final int SPECIALBTN_TOGGLEGYRO = -9;
 
     // GLFW Keycodes
     public static final int GLFW_KEY_UNKNOWN = 0;
@@ -152,6 +153,7 @@ public final class LwjglGlfwKeycode {
         add(SPECIALBTN_SCROLLUP, -1, "Scroll Up");
         add(SPECIALBTN_SCROLLDOWN, -1, "Scroll Down");
         add(SPECIALBTN_TOGGLECTRL, -1, "Toggle HUD");
+        add(SPECIALBTN_TOGGLEGYRO, -1, "Toggle Gyro");
         add(SPECIALBTN_KEYBOARD, -1, "Virtual Keyboard");
 
         // Common gaming keys first for convenience

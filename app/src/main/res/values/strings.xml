@@ -47,6 +47,7 @@
     <string name="edit_ctrl_toggle">Toggleable</string>
     <string name="edit_ctrl_passthru">Mouse pass-thru</string>
     <string name="edit_ctrl_swipeable">Swipeable</string>
+    <string name="edit_ctrl_macro_sequential">Sequential Macro (4-slot combo)</string>
     <string name="edit_ctrl_orientation">Drawer orientation</string>
     <string name="edit_ctrl_forward_lock">Forward sprint lock</string>
     <string name="edit_ctrl_absolute_stick">Fixed center stick</string>

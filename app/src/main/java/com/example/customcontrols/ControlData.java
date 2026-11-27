@@ -38,6 +38,7 @@ public class ControlData {
     public boolean displayInGame = true;
     public boolean displayInMenu = true;
     public boolean isDynamicBtn = false;
+    public boolean macroSequential = false;
 
     public ControlData() {
     }
@@ -77,6 +78,7 @@ public class ControlData {
         this.displayInGame = other.displayInGame;
         this.displayInMenu = other.displayInMenu;
         this.isDynamicBtn = other.isDynamicBtn;
+        this.macroSequential = other.macroSequential;
     }
 
     public void ensureValid() {

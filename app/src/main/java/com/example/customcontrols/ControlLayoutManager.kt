@@ -25,13 +25,29 @@ object ControlLayoutManager {
     private const val KEY_AIM_SENSITIVITY = "aim_sensitivity"
     private const val KEY_GLOBAL_OPACITY = "global_opacity"
     private const val KEY_TOUCH_RIPPLE = "touch_ripple_enabled"
+    private const val KEY_GYRO_ENABLED = "gyro_enabled"
+    private const val KEY_GYRO_MODE = "gyro_mode"
+    private const val KEY_GYRO_SENS_X = "gyro_sens_x"
+    private const val KEY_GYRO_SENS_Y = "gyro_sens_y"
+    private const val KEY_GYRO_INVERT_X = "gyro_invert_x"
+    private const val KEY_GYRO_INVERT_Y = "gyro_invert_y"
+    private const val KEY_GYRO_SMOOTHING = "gyro_smoothing"
+    private const val KEY_CROSSHAIR_ENABLED = "crosshair_enabled"
+    private const val KEY_CROSSHAIR_STYLE = "crosshair_style"
+    private const val KEY_HAPTIC_ENABLED = "haptic_enabled"
+    private const val KEY_AUTO_PAUSE_AIM_ON_MENU = "auto_pause_aim_on_menu"
+    private const val KEY_LOCK_POSITIONS = "lock_positions"
+    private const val KEY_AUTO_LOAD_LAST = "auto_load_last_preset"
+    private const val KEY_LAST_CHANGELOG_VERSION = "last_seen_changelog_version"
     private const val DIR_CONTROLMAP = "controlmap"
     private const val DIR_ICONS = "control_icons"
 
     const val DEFAULT_FPS_FILE = "warzone_fps.json"
+    const val DEFAULT_MINECRAFT_FILE = "minecraft_java.json"
     const val DEFAULT_ACTION_FILE = "tactical_action.json"
     const val DEFAULT_ARENA_FILE = "arena_shooter.json"
     const val DEFAULT_MOBA_FILE = "moba_arpg.json"
+    const val DEFAULT_BLANK_FILE = "blank_canvas.json"
 
     fun getControlMapDir(context: Context): File {
         val extRoot = context.getExternalFilesDir(null)
@@ -66,6 +82,10 @@ object ControlLayoutManager {
         if (!fpsFile.exists()) {
             createDefaultFpsPreset().save(fpsFile)
         }
+        val mcFile = File(dir, DEFAULT_MINECRAFT_FILE)
+        if (!mcFile.exists()) {
+            createMinecraftJavaPreset().save(mcFile)
+        }
         val actionFile = File(dir, DEFAULT_ACTION_FILE)
         if (!actionFile.exists()) {
             createDefaultActionPreset().save(actionFile)
@@ -77,6 +97,10 @@ object ControlLayoutManager {
         val mobaFile = File(dir, DEFAULT_MOBA_FILE)
         if (!mobaFile.exists()) {
             createMobaArpgPreset().save(mobaFile)
+        }
+        val blankFile = File(dir, DEFAULT_BLANK_FILE)
+        if (!blankFile.exists()) {
+            createBlankCanvasPreset().save(blankFile)
         }
     }
 
@@ -91,9 +115,11 @@ object ControlLayoutManager {
                 val parsed = CustomControls.load(file)
                 val inferredGame = parsed.gameName.takeIf { it.isNotBlank() } ?: when (file.name) {
                     DEFAULT_FPS_FILE -> "Warzone / CODM (FPS)"
+                    DEFAULT_MINECRAFT_FILE -> "Minecraft Java"
                     DEFAULT_ACTION_FILE -> "Action / RPG"
                     DEFAULT_ARENA_FILE -> "Tactical Arena Shooter"
                     DEFAULT_MOBA_FILE -> "MOBA / ARPG"
+                    DEFAULT_BLANK_FILE -> "Blank Canvas"
                     else -> "Custom Game Preset"
                 }
                 LayoutProfileInfo(
@@ -255,6 +281,165 @@ object ControlLayoutManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_TOUCH_RIPPLE, enabled)
+            .apply()
+    }
+
+    fun isGyroEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_GYRO_ENABLED, false)
+
+    fun setGyroEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_GYRO_ENABLED, enabled)
+            .apply()
+    }
+
+    fun getGyroMode(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_GYRO_MODE, 0)
+            .coerceIn(0, 2)
+
+    fun setGyroMode(context: Context, mode: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_GYRO_MODE, mode.coerceIn(0, 2))
+            .apply()
+    }
+
+    fun getGyroSensX(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_GYRO_SENS_X, 2.0f)
+            .coerceIn(0.2f, 8.0f)
+
+    fun setGyroSensX(context: Context, sens: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_GYRO_SENS_X, sens.coerceIn(0.2f, 8.0f))
+            .apply()
+    }
+
+    fun getGyroSensY(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_GYRO_SENS_Y, 2.0f)
+            .coerceIn(0.2f, 8.0f)
+
+    fun setGyroSensY(context: Context, sens: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_GYRO_SENS_Y, sens.coerceIn(0.2f, 8.0f))
+            .apply()
+    }
+
+    fun isGyroInvertX(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_GYRO_INVERT_X, false)
+
+    fun setGyroInvertX(context: Context, invert: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_GYRO_INVERT_X, invert)
+            .apply()
+    }
+
+    fun isGyroInvertY(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_GYRO_INVERT_Y, false)
+
+    fun setGyroInvertY(context: Context, invert: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_GYRO_INVERT_Y, invert)
+            .apply()
+    }
+
+    fun getGyroSmoothing(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_GYRO_SMOOTHING, 0.25f)
+            .coerceIn(0f, 1.0f)
+
+    fun setGyroSmoothing(context: Context, smoothing: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_GYRO_SMOOTHING, smoothing.coerceIn(0f, 1.0f))
+            .apply()
+    }
+
+    fun isCrosshairEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CROSSHAIR_ENABLED, false)
+
+    fun setCrosshairEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CROSSHAIR_ENABLED, enabled)
+            .apply()
+    }
+
+    fun getCrosshairStyle(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_CROSSHAIR_STYLE, 0)
+            .coerceIn(0, 3)
+
+    fun setCrosshairStyle(context: Context, style: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CROSSHAIR_STYLE, style.coerceIn(0, 3))
+            .apply()
+    }
+
+    fun isHapticEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HAPTIC_ENABLED, true)
+
+    fun setHapticEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HAPTIC_ENABLED, enabled)
+            .apply()
+    }
+
+    fun isAutoPauseAimOnMenu(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_PAUSE_AIM_ON_MENU, true)
+
+    fun setAutoPauseAimOnMenu(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUTO_PAUSE_AIM_ON_MENU, enabled)
+            .apply()
+    }
+
+    fun isPositionsLocked(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOCK_POSITIONS, false)
+
+    fun setPositionsLocked(context: Context, locked: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_LOCK_POSITIONS, locked)
+            .apply()
+    }
+
+    fun isAutoLoadLastPreset(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_LOAD_LAST, true)
+
+    fun setAutoLoadLastPreset(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUTO_LOAD_LAST, enabled)
+            .apply()
+    }
+
+    fun getLastSeenChangelogVersionCode(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_LAST_CHANGELOG_VERSION, 0)
+
+    fun setLastSeenChangelogVersionCode(context: Context, versionCode: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_LAST_CHANGELOG_VERSION, versionCode)
             .apply()
     }
 
@@ -547,5 +732,72 @@ object ControlLayoutManager {
         )
         controls.ensureValid()
         return controls
+    }
+
+    fun createMinecraftJavaPreset(): CustomControls {
+        val controls = CustomControls().apply {
+            gameName = "Minecraft Java"
+        }
+        controls.mJoystickDataList.add(ControlJoystickData().apply {
+            name = "WASD"
+            dynamicX = "0.06 * ${'$'}{screen_width}"
+            dynamicY = "0.48 * ${'$'}{screen_height}"
+            width = 144f
+            height = 144f
+            forwardLock = true
+        })
+        controls.mControlDataList.add(
+            ControlData("Break", intArrayOf(LwjglGlfwKeycode.SPECIALBTN_MOUSEPRI, 0, 0, 0), "0.83 * ${'$'}{screen_width}", "0.56 * ${'$'}{screen_height}", 70f, 70f).apply {
+                cornerRadius = 100f
+                passThruEnabled = true
+            }
+        )
+        controls.mControlDataList.add(
+            ControlData("Use", intArrayOf(LwjglGlfwKeycode.SPECIALBTN_MOUSESEC, 0, 0, 0), "0.91 * ${'$'}{screen_width}", "0.42 * ${'$'}{screen_height}", 64f, 56f)
+        )
+        controls.mControlDataList.add(
+            ControlData("Jump", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_SPACE, 0, 0, 0), "0.90 * ${'$'}{screen_width}", "0.70 * ${'$'}{screen_height}", 64f, 56f).apply {
+                cornerRadius = 100f
+            }
+        )
+        controls.mControlDataList.add(
+            ControlData("Sneak", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_LEFT_SHIFT, 0, 0, 0), "0.74 * ${'$'}{screen_width}", "0.72 * ${'$'}{screen_height}", 64f, 48f).apply {
+                isToggle = true
+            }
+        )
+        controls.mControlDataList.add(
+            ControlData("Inv E", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_E, 0, 0, 0), "0.14 * ${'$'}{screen_width}", "0.08 * ${'$'}{screen_height}", 56f, 38f)
+        )
+        controls.mControlDataList.add(
+            ControlData("Drop Q", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_Q, 0, 0, 0), "0.73 * ${'$'}{screen_width}", "0.48 * ${'$'}{screen_height}", 54f, 44f)
+        )
+        controls.mControlDataList.add(
+            ControlData("ESC", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_ESCAPE, 0, 0, 0), "0.04 * ${'$'}{screen_width}", "0.08 * ${'$'}{screen_height}", 54f, 38f)
+        )
+        controls.mControlDataList.add(
+            ControlData("F3", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_F3, 0, 0, 0), "0.23 * ${'$'}{screen_width}", "0.08 * ${'$'}{screen_height}", 50f, 38f)
+        )
+        controls.mControlDataList.add(
+            ControlData("F5", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_F5, 0, 0, 0), "0.31 * ${'$'}{screen_width}", "0.08 * ${'$'}{screen_height}", 50f, 38f)
+        )
+        val hotbar = ControlDrawerData().apply {
+            properties = ControlData("Hotbar", intArrayOf(0, 0, 0, 0), "0.88 * ${'$'}{screen_width}", "0.08 * ${'$'}{screen_height}", 74f, 38f)
+            orientation = ControlDrawerData.ORIENTATION_DOWN
+            for (slot in 1..5) {
+                buttonProperties.add(
+                    ControlData(slot.toString(), intArrayOf(LwjglGlfwKeycode.GLFW_KEY_0 + slot, 0, 0, 0), "0", "0", 48f, 38f)
+                )
+            }
+        }
+        controls.mDrawerDataList.add(hotbar)
+        controls.ensureValid()
+        return controls
+    }
+
+    fun createBlankCanvasPreset(): CustomControls {
+        return CustomControls().apply {
+            gameName = "Blank Canvas"
+            ensureValid()
+        }
     }
 }

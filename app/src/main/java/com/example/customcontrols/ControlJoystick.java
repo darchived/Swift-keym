@@ -172,6 +172,9 @@ public class ControlJoystick extends View implements ControlInterface {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (mParentLayout.isPositionsLocked()) {
+                    return true;
+                }
                 float dx = event.getRawX() - downRawX;
                 float dy = event.getRawY() - downRawY;
                 if (!hasMoved && Math.hypot(dx, dy) > touchSlop) {

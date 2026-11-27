@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Gamepad
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -100,6 +101,7 @@ import com.example.customcontrols.LayoutProfileInfo
 import com.example.input.InputBridge
 import com.example.input.ShizukuHelper
 import com.example.overlay.OverlayService
+import com.example.ui.ChangelogDialog
 import com.example.ui.theme.BgDarkGrey
 import com.example.ui.theme.BorderGrey
 import com.example.ui.theme.JetBrainsMonoFamily
@@ -148,10 +150,18 @@ class MainActivity : ComponentActivity() {
         var aimSensitivity by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensitivity(context)) }
         var globalOpacity by remember { mutableFloatStateOf(ControlLayoutManager.getGlobalOpacity(context)) }
         var touchRippleEnabled by remember { mutableStateOf(ControlLayoutManager.isTouchRippleEnabled(context)) }
+        var gyroEnabled by remember { mutableStateOf(ControlLayoutManager.isGyroEnabled(context)) }
+        var crosshairEnabled by remember { mutableStateOf(ControlLayoutManager.isCrosshairEnabled(context)) }
+        var hapticEnabled by remember { mutableStateOf(ControlLayoutManager.isHapticEnabled(context)) }
         var previewJson by remember { mutableStateOf<String?>(null) }
         var showFolderDialog by remember { mutableStateOf(false) }
         var showRestrictedGuideDialog by remember { mutableStateOf(false) }
         var showNewPresetDialog by remember { mutableStateOf(false) }
+        var showChangelogDialog by remember {
+            mutableStateOf(
+                BuildConfig.VERSION_CODE > ControlLayoutManager.getLastSeenChangelogVersionCode(context)
+            )
+        }
         var renameTarget by remember { mutableStateOf<LayoutProfileInfo?>(null) }
 
         val controlMapDirPath = remember {
@@ -169,6 +179,9 @@ class MainActivity : ComponentActivity() {
             aimSensitivity = ControlLayoutManager.getAimSensitivity(context)
             globalOpacity = ControlLayoutManager.getGlobalOpacity(context)
             touchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(context)
+            gyroEnabled = ControlLayoutManager.isGyroEnabled(context)
+            crosshairEnabled = ControlLayoutManager.isCrosshairEnabled(context)
+            hapticEnabled = ControlLayoutManager.isHapticEnabled(context)
         }
 
         DisposableEffect(lifecycleOwner) {
@@ -314,19 +327,44 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 Text(
-                                    text = "Non-Root Shizuku Keymapper",
+                                    text = getString(R.string.app_credits),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MutedGrey
                                 )
                             }
                         }
 
-                        IconButton(onClick = { refreshAll() }) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = "Refresh status",
-                                tint = SoftWhite
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = { showChangelogDialog = true },
+                                modifier = Modifier
+                                    .height(36.dp)
+                                    .testTag("changelog_button"),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, BorderGrey),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = SurfaceElevatedGrey,
+                                    contentColor = PureWhite
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Info,
+                                    contentDescription = "What's New / Changelog",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Changelog",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                            IconButton(onClick = { refreshAll() }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = "Refresh status",
+                                    tint = SoftWhite
+                                )
+                            }
                         }
                     }
 
@@ -751,6 +789,128 @@ class MainActivity : ComponentActivity() {
                                     )
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Gyroscope Aiming",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "CODM-style hardware gyro sensor aiming (tune X/Y & modes in live menu)",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MutedGrey
+                                    )
+                                }
+                                Switch(
+                                    checked = gyroEnabled,
+                                    onCheckedChange = { enabled ->
+                                        gyroEnabled = enabled
+                                        ControlLayoutManager.setGyroEnabled(context, enabled)
+                                        if (isOverlayRunning) {
+                                            context.startService(
+                                                Intent(context, OverlayService::class.java).apply {
+                                                    action = OverlayService.ACTION_UPDATE_GYRO
+                                                }
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("gyro_enabled_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = BgDarkGrey,
+                                        checkedTrackColor = PureWhite,
+                                        uncheckedThumbColor = MutedGrey,
+                                        uncheckedTrackColor = BgDarkGrey
+                                    )
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Center Crosshair Overlay",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "Pass-through centered reticle for hipfire and sniper alignment",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MutedGrey
+                                    )
+                                }
+                                Switch(
+                                    checked = crosshairEnabled,
+                                    onCheckedChange = { enabled ->
+                                        crosshairEnabled = enabled
+                                        ControlLayoutManager.setCrosshairEnabled(context, enabled)
+                                        if (isOverlayRunning) {
+                                            context.startService(
+                                                Intent(context, OverlayService::class.java).apply {
+                                                    action = OverlayService.ACTION_UPDATE_CROSSHAIR
+                                                }
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("crosshair_enabled_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = BgDarkGrey,
+                                        checkedTrackColor = PureWhite,
+                                        uncheckedThumbColor = MutedGrey,
+                                        uncheckedTrackColor = BgDarkGrey
+                                    )
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Tactile Haptics (12ms)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "Crisp micro-vibration on registered HUD button presses",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MutedGrey
+                                    )
+                                }
+                                Switch(
+                                    checked = hapticEnabled,
+                                    onCheckedChange = { enabled ->
+                                        hapticEnabled = enabled
+                                        ControlLayoutManager.setHapticEnabled(context, enabled)
+                                        if (isOverlayRunning) {
+                                            context.startService(
+                                                Intent(context, OverlayService::class.java).apply {
+                                                    action = OverlayService.ACTION_UPDATE_HAPTICS
+                                                }
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("haptic_enabled_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = BgDarkGrey,
+                                        checkedTrackColor = PureWhite,
+                                        uncheckedThumbColor = MutedGrey,
+                                        uncheckedTrackColor = BgDarkGrey
+                                    )
+                                )
+                            }
                         }
                     }
 
@@ -1013,9 +1173,11 @@ class MainActivity : ComponentActivity() {
             var templateIdx by remember { mutableStateOf(0) }
             val templates = listOf(
                 "Warzone / CODM (FPS)",
+                "Minecraft Java",
                 "Action / RPG",
                 "Tactical Arena Shooter",
-                "MOBA / ARPG"
+                "MOBA / ARPG",
+                "Blank Canvas"
             )
             AlertDialog(
                 onDismissRequest = { showNewPresetDialog = false },
@@ -1062,9 +1224,11 @@ class MainActivity : ComponentActivity() {
                 confirmButton = {
                     TextButton(onClick = {
                         val seed = when (templateIdx) {
-                            1 -> ControlLayoutManager.createDefaultActionPreset()
-                            2 -> ControlLayoutManager.createArenaShooterPreset()
-                            3 -> ControlLayoutManager.createMobaArpgPreset()
+                            1 -> ControlLayoutManager.createMinecraftJavaPreset()
+                            2 -> ControlLayoutManager.createDefaultActionPreset()
+                            3 -> ControlLayoutManager.createArenaShooterPreset()
+                            4 -> ControlLayoutManager.createMobaArpgPreset()
+                            5 -> ControlLayoutManager.createBlankCanvasPreset()
                             else -> ControlLayoutManager.createDefaultFpsPreset()
                         }
                         val created = ControlLayoutManager.createNewPreset(
@@ -1157,6 +1321,15 @@ class MainActivity : ComponentActivity() {
                     TextButton(onClick = { previewJson = null }) {
                         Text("Close", color = PureWhite)
                     }
+                }
+            )
+        }
+
+        if (showChangelogDialog) {
+            ChangelogDialog(
+                onDismiss = {
+                    ControlLayoutManager.setLastSeenChangelogVersionCode(context, BuildConfig.VERSION_CODE)
+                    showChangelogDialog = false
                 }
             )
         }

@@ -38,6 +38,7 @@ import com.example.customcontrols.ControlLayout
 import com.example.customcontrols.ControlLayoutManager
 import com.example.customcontrols.ExitConfirmDialog
 import com.example.customcontrols.utils.ControlUtils
+import com.example.input.GyroscopeController
 import com.example.input.InputBridge
 import com.example.input.LwjglGlfwKeycode
 import com.example.input.ShizukuHelper
@@ -51,7 +52,9 @@ import kotlin.math.hypot
  * - Attaches each button, drawer, sub-button, and joystick as its own individual small
  *   WindowManager window (no full-screen root container, 100% pass-through on empty space).
  * - Hosts a toggleable right-half 3D Aim Swipe Zone (OFF by default) layered below buttons.
- * - Hosts a persistent draggable Floating Eye Button to hide/show the entire HUD with one tap.
+ * - Hosts a dedicated Quick-Aim Floating Chip right beside the draggable Floating Eye Button.
+ * - Hosts a top pill bar with Quick-Gyro toggle, Undo/Redo, and Cogwheel Settings Menu.
+ * - Runs hardware TYPE_GYROSCOPE aiming + pass-through Center Crosshair overlay.
  */
 class OverlayService : Service() {
 
@@ -62,6 +65,10 @@ class OverlayService : Service() {
         const val ACTION_UPDATE_SENSITIVITY = "com.example.overlay.ACTION_UPDATE_SENSITIVITY"
         const val ACTION_UPDATE_OPACITY = "com.example.overlay.ACTION_UPDATE_OPACITY"
         const val ACTION_UPDATE_RIPPLE = "com.example.overlay.ACTION_UPDATE_RIPPLE"
+        const val ACTION_UPDATE_GYRO = "com.example.overlay.ACTION_UPDATE_GYRO"
+        const val ACTION_UPDATE_CROSSHAIR = "com.example.overlay.ACTION_UPDATE_CROSSHAIR"
+        const val ACTION_UPDATE_HAPTICS = "com.example.overlay.ACTION_UPDATE_HAPTICS"
+        const val ACTION_UPDATE_LOCK = "com.example.overlay.ACTION_UPDATE_LOCK"
 
         private const val CHANNEL_ID = "swift_keym_overlay_channel"
         private const val NOTIF_ID = 4102
@@ -78,6 +85,7 @@ class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
     private var controlLayout: ControlLayout? = null
+    private var gyroController: GyroscopeController? = null
 
     private var screenWidthPx = 1920
     private var screenHeightPx = 1080
@@ -92,20 +100,26 @@ class OverlayService : Service() {
     private var aimZoneParams: WindowManager.LayoutParams? = null
     private var isAimEnabled = false
 
-    // Top-layer floating bar (Aim Toggle, Undo, Cogwheel, Redo)
+    // Top-layer floating bar (Gyro Toggle, Undo, Cogwheel, Redo)
     private var topBarRoot: LinearLayout? = null
     private var topBarParams: WindowManager.LayoutParams? = null
-    private var aimToggleBtn: ImageButton? = null
+    private var gyroToggleBtn: ImageButton? = null
     private var undoPillBtn: ImageButton? = null
     private var redoPillBtn: ImageButton? = null
+
+    // Dedicated Quick-Aim Floating Chip placed beside the Floating Eye Button
+    private var quickAimButton: ImageButton? = null
+    private var quickAimParams: WindowManager.LayoutParams? = null
 
     // Persistent draggable Floating Eye Button (Show / Hide GUI)
     private var eyeButton: ImageButton? = null
     private var eyeParams: WindowManager.LayoutParams? = null
 
-    // Visual-only (strictly FLAG_NOT_TOUCHABLE) Touch Ripple feedback window
+    // Visual-only (strictly FLAG_NOT_TOUCHABLE) Touch Ripple & Center Crosshair windows
     private var touchRippleView: TouchRippleOverlayView? = null
     private var touchRippleParams: WindowManager.LayoutParams? = null
+    private var crosshairView: CrosshairOverlayView? = null
+    private var crosshairParams: WindowManager.LayoutParams? = null
 
     private var isHudHidden = false
 
@@ -252,6 +266,22 @@ class OverlayService : Service() {
                 controlLayout?.isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this)
                 return START_STICKY
             }
+            ACTION_UPDATE_GYRO -> {
+                syncGyroSettingsFromPrefs()
+                return START_STICKY
+            }
+            ACTION_UPDATE_CROSSHAIR -> {
+                syncCrosshairFromPrefs()
+                return START_STICKY
+            }
+            ACTION_UPDATE_HAPTICS -> {
+                controlLayout?.isHapticEnabled = ControlLayoutManager.isHapticEnabled(this)
+                return START_STICKY
+            }
+            ACTION_UPDATE_LOCK -> {
+                controlLayout?.isPositionsLocked = ControlLayoutManager.isPositionsLocked(this)
+                return START_STICKY
+            }
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -266,11 +296,15 @@ class OverlayService : Service() {
             setupAimSwipeZoneWindow()
             // Layer 2 (Middle): Individual Control Windows via ControlLayout WindowOverlayHost
             setupDetachedControlLayout()
-            // Layer 3 (Top Visual-Only): Non-touchable Touch Ripple window
+            // Layer 3 (Visual-Only Non-Touchable): Center Crosshair & Touch Ripple windows
+            setupCrosshairWindow()
             setupTouchRippleWindow()
-            // Layer 4 (Top Chrome): Top Floating Bar & Persistent Floating Eye Button
+            // Layer 4 (Top Chrome): Top Pill Bar, Quick-Aim Chip, and Persistent Floating Eye Button
             setupTopFloatingBar()
+            setupQuickAimButton()
             setupFloatingEyeButton()
+            // Layer 5 (Hardware Sensor): CODM-style Gyroscope controller
+            setupGyroscopeController()
         }
         _isRunning.value = true
         return START_STICKY
@@ -280,6 +314,7 @@ class OverlayService : Service() {
         super.onConfigurationChanged(newConfig)
         updateScreenDimensions()
         updateAimZoneWindowLayout()
+        gyroController?.resetFilters()
         controlLayout?.relayoutAllControls()
     }
 
@@ -364,8 +399,14 @@ class OverlayService : Service() {
             setWindowOverlayHost(windowOverlayHost)
             aimSensitivity = ControlLayoutManager.getAimSensitivity(this@OverlayService)
             isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this@OverlayService)
+            isHapticEnabled = ControlLayoutManager.isHapticEnabled(this@OverlayService)
+            isPositionsLocked = ControlLayoutManager.isPositionsLocked(this@OverlayService)
             setOnHistoryChangedListener { canUndo, canRedo, _ ->
                 updateOverlayHistoryButtons(canUndo, canRedo)
+            }
+            setOnLayoutModifiedListener { modifiedControls ->
+                // Auto-persist live overlay edits immediately so changes survive game switches
+                ControlLayoutManager.saveActiveLayout(this@OverlayService, modifiedControls)
             }
             loadLayout(ControlLayoutManager.loadActiveLayout(this@OverlayService))
             globalOpacity = ControlLayoutManager.getGlobalOpacity(this@OverlayService)
@@ -377,8 +418,111 @@ class OverlayService : Service() {
             when (code) {
                 LwjglGlfwKeycode.SPECIALBTN_TOGGLECTRL -> eyeButton?.post { toggleHudVisibility() }
                 LwjglGlfwKeycode.SPECIALBTN_MENU -> topBarRoot?.post { toggleEditMode() }
+                LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO -> topBarRoot?.post { toggleGyroFromOverlay() }
             }
         }
+
+        InputBridge.setMenuKeyListener { _ ->
+            if (ControlLayoutManager.isAutoPauseAimOnMenu(this) && isAimEnabled) {
+                quickAimButton?.post {
+                    if (isAimEnabled) {
+                        setAimEnabled(false)
+                        Toast.makeText(
+                            this@OverlayService,
+                            "Aim Look paused for menu",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupCrosshairWindow() {
+        val view = CrosshairOverlayView(this)
+        val sizePx = ControlUtils.dpToPx(this, 44f).toInt()
+        val params = WindowManager.LayoutParams(
+            sizePx,
+            sizePx,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            x = 0
+            y = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        crosshairView = view
+        crosshairParams = params
+        windowManager.addView(view, params)
+        syncCrosshairFromPrefs()
+    }
+
+    private fun syncCrosshairFromPrefs() {
+        val view = crosshairView ?: return
+        val params = crosshairParams ?: return
+        val enabled = ControlLayoutManager.isCrosshairEnabled(this) && !isHudHidden
+        view.crosshairStyle = ControlLayoutManager.getCrosshairStyle(this)
+        val sizePx = ControlUtils.dpToPx(this, 44f).toInt()
+        if (enabled) {
+            params.width = sizePx
+            params.height = sizePx
+            view.visibility = View.VISIBLE
+        } else {
+            params.width = 0
+            params.height = 0
+            view.visibility = View.GONE
+        }
+        if (view.isAttachedToWindow) {
+            try {
+                windowManager.updateViewLayout(view, params)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun setupGyroscopeController() {
+        val controller = GyroscopeController(this)
+        gyroController = controller
+        syncGyroSettingsFromPrefs()
+        if (controller.isHardwareSupported()) {
+            controller.start()
+        }
+    }
+
+    private fun syncGyroSettingsFromPrefs() {
+        val controller = gyroController ?: return
+        val enabled = ControlLayoutManager.isGyroEnabled(this)
+        controller.enabled = enabled
+        controller.activationMode = ControlLayoutManager.getGyroMode(this)
+        controller.sensitivityX = ControlLayoutManager.getGyroSensX(this)
+        controller.sensitivityY = ControlLayoutManager.getGyroSensY(this)
+        controller.invertX = ControlLayoutManager.isGyroInvertX(this)
+        controller.invertY = ControlLayoutManager.isGyroInvertY(this)
+        controller.smoothing = ControlLayoutManager.getGyroSmoothing(this)
+        controller.paused = isHudHidden || (controlLayout?.isModifiable == true)
+        gyroToggleBtn?.let { styleChipToggleButton(it, enabled) }
+    }
+
+    private fun toggleGyroFromOverlay() {
+        if (isHudHidden) return
+        val controller = gyroController
+        if (controller != null && !controller.isHardwareSupported()) {
+            Toast.makeText(this, "No gyroscope sensor detected on this device.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val next = !ControlLayoutManager.isGyroEnabled(this)
+        ControlLayoutManager.setGyroEnabled(this, next)
+        syncGyroSettingsFromPrefs()
+        Toast.makeText(
+            this,
+            if (next) "Gyroscope ON" else "Gyroscope OFF",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun setupTouchRippleWindow() {
@@ -455,67 +599,27 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            x = -ControlUtils.dpToPx(this@OverlayService, 26f).toInt()
+            x = -ControlUtils.dpToPx(this@OverlayService, 54f).toInt()
             y = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
         }
 
         val btnSz = ControlUtils.dpToPx(this@OverlayService, 34f).toInt()
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
 
-        val dragListener = object : View.OnTouchListener {
-            private var startX = 0
-            private var startY = 0
-            private var downRawX = 0f
-            private var downRawY = 0f
-            private var moved = false
+        val dragListener = createDragOrClickTouchListener(bar, params, touchSlop)
 
-            override fun onTouch(v: View, event: MotionEvent): Boolean {
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startX = params.x
-                        startY = params.y
-                        downRawX = event.rawX
-                        downRawY = event.rawY
-                        moved = false
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val dx = event.rawX - downRawX
-                        val dy = event.rawY - downRawY
-                        if (!moved && hypot(dx.toDouble(), dy.toDouble()) > touchSlop) {
-                            moved = true
-                        }
-                        if (moved) {
-                            params.x = startX + dx.toInt()
-                            params.y = startY + dy.toInt()
-                            try {
-                                windowManager.updateViewLayout(bar, params)
-                            } catch (_: Throwable) {
-                            }
-                        }
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (!moved) {
-                            v.performClick()
-                        }
-                        return true
-                    }
-                }
-                return false
-            }
-        }
-
-        // Aim Look Toggle Button (OFF by default)
-        val aimBtn = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_crosshair)
-            contentDescription = "Toggle Aim Look Swipe Zone"
-            setPadding(6, 6, 6, 6)
-            setOnClickListener { toggleAimMode() }
+        // Quick Gyro Toggle Chip
+        val gyroBtn = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_gyro)
+            contentDescription = "Toggle Gyroscope Aiming"
+            val p = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
+            setPadding(p, p, p, p)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnClickListener { toggleGyroFromOverlay() }
             setOnTouchListener(dragListener)
         }
-        aimToggleBtn = aimBtn
-        styleAimToggleButton(aimBtn, isAimEnabled)
+        gyroToggleBtn = gyroBtn
+        styleChipToggleButton(gyroBtn, ControlLayoutManager.isGyroEnabled(this))
 
         val undoBtn = ImageButton(this).apply {
             setImageResource(R.drawable.ic_undo)
@@ -549,10 +653,10 @@ class OverlayService : Service() {
         }
         redoPillBtn = redoBtn
 
-        val aimLp = LinearLayout.LayoutParams(btnSz, btnSz).apply {
+        val gyroLp = LinearLayout.LayoutParams(btnSz, btnSz).apply {
             marginEnd = ControlUtils.dpToPx(this@OverlayService, 4f).toInt()
         }
-        bar.addView(aimBtn, aimLp)
+        bar.addView(gyroBtn, gyroLp)
         bar.addView(undoBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.addView(cogBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.addView(redoBtn, LinearLayout.LayoutParams(btnSz, btnSz))
@@ -561,6 +665,44 @@ class OverlayService : Service() {
         topBarRoot = bar
         topBarParams = params
         windowManager.addView(bar, params)
+    }
+
+    /**
+     * Dedicated movable Quick-Aim Floating Chip positioned directly next to the Floating Eye Button.
+     * Toggles the right-half 3D Aim Swipe Zone ON/OFF with one tap.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupQuickAimButton() {
+        val aimSize = ControlUtils.dpToPx(this, 42f).toInt()
+        val aimBtn = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_crosshair)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            val p = ControlUtils.dpToPx(this@OverlayService, 9f).toInt()
+            setPadding(p, p, p, p)
+            contentDescription = "Quick Aim Swipe Zone Toggle"
+            elevation = ControlUtils.dpToPx(this@OverlayService, 12f)
+            setOnClickListener { toggleAimMode() }
+        }
+        styleChipToggleButton(aimBtn, isAimEnabled)
+
+        val params = WindowManager.LayoutParams(
+            aimSize,
+            aimSize,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            BASE_WINDOW_FLAGS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            x = ControlUtils.dpToPx(this@OverlayService, 16f).toInt()
+            y = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
+        }
+
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        aimBtn.setOnTouchListener(createDragOrClickTouchListener(aimBtn, params, touchSlop))
+
+        quickAimButton = aimBtn
+        quickAimParams = params
+        windowManager.addView(aimBtn, params)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -575,6 +717,7 @@ class OverlayService : Service() {
             setPadding(p, p, p, p)
             contentDescription = "Hide or show Swift KeyM overlay"
             elevation = ControlUtils.dpToPx(this@OverlayService, 12f)
+            setOnClickListener { toggleHudVisibility() }
         }
 
         val params = WindowManager.LayoutParams(
@@ -585,18 +728,31 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            x = ControlUtils.dpToPx(this@OverlayService, 56f).toInt()
+            x = ControlUtils.dpToPx(this@OverlayService, 66f).toInt()
             y = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
         }
 
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
-        eyeBtn.setOnTouchListener(object : View.OnTouchListener {
+        eyeBtn.setOnTouchListener(createDragOrClickTouchListener(eyeBtn, params, touchSlop))
+
+        eyeButton = eyeBtn
+        eyeParams = params
+        windowManager.addView(eyeBtn, params)
+    }
+
+    private fun createDragOrClickTouchListener(
+        targetWindowView: View,
+        params: WindowManager.LayoutParams,
+        touchSlop: Int
+    ): View.OnTouchListener {
+        return object : View.OnTouchListener {
             private var startX = 0
             private var startY = 0
             private var downRawX = 0f
             private var downRawY = 0f
             private var moved = false
 
+            @SuppressLint("ClickableViewAccessibility")
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -617,7 +773,7 @@ class OverlayService : Service() {
                             params.x = startX + dx.toInt()
                             params.y = startY + dy.toInt()
                             try {
-                                windowManager.updateViewLayout(eyeBtn, params)
+                                windowManager.updateViewLayout(targetWindowView, params)
                             } catch (_: Throwable) {
                             }
                         }
@@ -625,18 +781,14 @@ class OverlayService : Service() {
                     }
                     MotionEvent.ACTION_UP -> {
                         if (!moved) {
-                            toggleHudVisibility()
+                            v.performClick()
                         }
                         return true
                     }
                 }
                 return false
             }
-        })
-
-        eyeButton = eyeBtn
-        eyeParams = params
-        windowManager.addView(eyeBtn, params)
+        }
     }
 
     private fun bringFloatingChromeToFront() {
@@ -646,6 +798,15 @@ class OverlayService : Service() {
             try {
                 windowManager.removeViewImmediate(bar)
                 windowManager.addView(bar, bParams)
+            } catch (_: Throwable) {
+            }
+        }
+        val aim = quickAimButton
+        val aParams = quickAimParams
+        if (aim != null && aParams != null && aim.isAttachedToWindow) {
+            try {
+                windowManager.removeViewImmediate(aim)
+                windowManager.addView(aim, aParams)
             } catch (_: Throwable) {
             }
         }
@@ -660,19 +821,19 @@ class OverlayService : Service() {
         }
     }
 
-    private fun styleAimToggleButton(btn: ImageButton, enabled: Boolean) {
+    private fun styleChipToggleButton(btn: ImageButton, enabled: Boolean) {
         val gd = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             if (enabled) {
                 setColor(0xFFFFFFFF.toInt())
-                setStroke(1, 0xFFFFFFFF.toInt())
+                setStroke(2, 0xFFFFFFFF.toInt())
             } else {
                 setColor(0xFF2C2C2C.toInt())
-                setStroke(1, 0x44FFFFFF)
+                setStroke(1, 0x55FFFFFF)
             }
         }
         btn.background = gd
-        btn.setColorFilter(if (enabled) 0xFF1E1E1E.toInt() else 0xFFA8A8A8.toInt())
+        btn.setColorFilter(if (enabled) 0xFF1E1E1E.toInt() else 0xFFB8B8B8.toInt())
     }
 
     private fun toggleAimMode() {
@@ -687,7 +848,7 @@ class OverlayService : Service() {
 
     private fun setAimEnabled(enabled: Boolean) {
         isAimEnabled = enabled && !isHudHidden
-        aimToggleBtn?.let { styleAimToggleButton(it, isAimEnabled) }
+        quickAimButton?.let { styleChipToggleButton(it, isAimEnabled) }
         updateAimZoneWindowLayout()
     }
 
@@ -734,6 +895,33 @@ class OverlayService : Service() {
                     ControlLayoutManager.setAimSensitivity(this@OverlayService, next)
                 }
 
+                override fun onAimSensitivitySet(sensitivity: Float) {
+                    hud.aimSensitivity = sensitivity
+                    ControlLayoutManager.setAimSensitivity(this@OverlayService, sensitivity)
+                }
+
+                override fun isAimEnabled(): Boolean = isAimEnabled
+
+                override fun onSetAimEnabled(enabled: Boolean) {
+                    setAimEnabled(enabled)
+                }
+
+                override fun onGyroSettingsChanged() {
+                    syncGyroSettingsFromPrefs()
+                }
+
+                override fun onCrosshairSettingsChanged() {
+                    syncCrosshairFromPrefs()
+                }
+
+                override fun onHapticToggled(enabled: Boolean) {
+                    hud.isHapticEnabled = enabled
+                }
+
+                override fun onPositionsLockToggled(locked: Boolean) {
+                    hud.isPositionsLocked = locked
+                }
+
                 override fun onExportControlMap() {
                     val activeName = ControlLayoutManager.getActiveLayoutName(this@OverlayService)
                     val json = hud.layout.toJson()
@@ -746,6 +934,10 @@ class OverlayService : Service() {
                         "Saved to controlmap/$activeName & copied JSON",
                         Toast.LENGTH_SHORT
                     ).show()
+                }
+
+                override fun onStopServiceConfirmed() {
+                    stopSelf()
                 }
 
                 override fun onExitHost() {
@@ -781,6 +973,7 @@ class OverlayService : Service() {
         if (hud.isModifiable && isAimEnabled) {
             setAimEnabled(false)
         }
+        gyroController?.paused = isHudHidden || hud.isModifiable
         updateOverlayHistoryButtons(hud.canUndo(), hud.canRedo())
     }
 
@@ -808,6 +1001,8 @@ class OverlayService : Service() {
             hud.releaseAllActiveTouches()
             touchRippleView?.clearRipples()
             InputBridge.resetAll()
+            gyroController?.paused = true
+            syncCrosshairFromPrefs()
 
             // Hide all individual button/joystick/drawer windows
             for ((view, _) in controlWindows) {
@@ -815,19 +1010,9 @@ class OverlayService : Service() {
                 windowOverlayHost.updateControlWindow(view, Int.MIN_VALUE, Int.MIN_VALUE, -1, -1, logical)
             }
 
-            // Hide top floating bar so only the small Eye Button remains
-            topBarRoot?.let { bar ->
-                topBarParams?.let { bp ->
-                    bp.flags = BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                    bar.visibility = View.GONE
-                    if (bar.isAttachedToWindow) {
-                        try {
-                            windowManager.updateViewLayout(bar, bp)
-                        } catch (_: Throwable) {
-                        }
-                    }
-                }
-            }
+            // Hide top floating bar & Quick-Aim chip so only the small Eye Button remains
+            setChromeWindowVisible(topBarRoot, topBarParams, false)
+            setChromeWindowVisible(quickAimButton, quickAimParams, false)
             eyeButton?.setImageResource(R.drawable.ic_eye_off)
         } else {
             // Restore individual control windows according to their logical visibility
@@ -836,27 +1021,34 @@ class OverlayService : Service() {
                 windowOverlayHost.updateControlWindow(view, Int.MIN_VALUE, Int.MIN_VALUE, -1, -1, logical)
             }
 
-            topBarRoot?.let { bar ->
-                topBarParams?.let { bp ->
-                    bp.flags = BASE_WINDOW_FLAGS
-                    bar.visibility = View.VISIBLE
-                    if (bar.isAttachedToWindow) {
-                        try {
-                            windowManager.updateViewLayout(bar, bp)
-                        } catch (_: Throwable) {
-                        }
-                    }
-                }
-            }
+            setChromeWindowVisible(topBarRoot, topBarParams, true)
+            setChromeWindowVisible(quickAimButton, quickAimParams, true)
             eyeButton?.setImageResource(R.drawable.ic_eye_open)
+            gyroController?.paused = hud.isModifiable
+            syncCrosshairFromPrefs()
             updateOverlayHistoryButtons(hud.canUndo(), hud.canRedo())
+        }
+    }
+
+    private fun setChromeWindowVisible(view: View?, params: WindowManager.LayoutParams?, visible: Boolean) {
+        if (view == null || params == null) return
+        params.flags = if (visible) BASE_WINDOW_FLAGS else (BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        view.visibility = if (visible) View.VISIBLE else View.GONE
+        if (view.isAttachedToWindow) {
+            try {
+                windowManager.updateViewLayout(view, params)
+            } catch (_: Throwable) {
+            }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         _isRunning.value = false
+        gyroController?.stop()
+        gyroController = null
         InputBridge.setSpecialActionListener(null)
+        InputBridge.setMenuKeyListener(null)
         InputBridge.resetAll()
 
         controlLayout?.releaseAllActiveTouches()
@@ -873,32 +1065,8 @@ class OverlayService : Service() {
         controlDesiredSizes.clear()
         controlLogicalVisible.clear()
 
-        aimZoneView?.let { view ->
-            if (view.isAttachedToWindow) {
-                try {
-                    windowManager.removeViewImmediate(view)
-                } catch (_: Throwable) {
-                }
-            }
-        }
-        topBarRoot?.let { view ->
-            if (view.isAttachedToWindow) {
-                try {
-                    windowManager.removeViewImmediate(view)
-                } catch (_: Throwable) {
-                }
-            }
-        }
-        eyeButton?.let { view ->
-            if (view.isAttachedToWindow) {
-                try {
-                    windowManager.removeViewImmediate(view)
-                } catch (_: Throwable) {
-                }
-            }
-        }
-        touchRippleView?.let { view ->
-            if (view.isAttachedToWindow) {
+        listOf(aimZoneView, crosshairView, topBarRoot, quickAimButton, eyeButton, touchRippleView).forEach { view ->
+            if (view != null && view.isAttachedToWindow) {
                 try {
                     windowManager.removeViewImmediate(view)
                 } catch (_: Throwable) {
@@ -907,7 +1075,9 @@ class OverlayService : Service() {
         }
 
         aimZoneView = null
+        crosshairView = null
         topBarRoot = null
+        quickAimButton = null
         eyeButton = null
         touchRippleView = null
         controlLayout = null

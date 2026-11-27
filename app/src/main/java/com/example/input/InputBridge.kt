@@ -45,6 +45,17 @@ public object InputBridge {
     @Volatile
     private var specialActionListener: ((Int, Boolean) -> Unit)? = null
 
+    @Volatile
+    private var menuKeyListener: ((Int) -> Unit)? = null
+
+    @Volatile
+    var isPrimaryMouseDown: Boolean = false
+        private set
+
+    @Volatile
+    var isSecondaryMouseDown: Boolean = false
+        private set
+
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         refreshShizukuState()
     }
@@ -140,6 +151,10 @@ public object InputBridge {
         specialActionListener = listener
     }
 
+    fun setMenuKeyListener(listener: ((Int) -> Unit)?) {
+        menuKeyListener = listener
+    }
+
     @JvmStatic
     fun sendKey(glfwKeycode: Int, down: Boolean) {
         if (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_UNKNOWN) return
@@ -167,10 +182,18 @@ public object InputBridge {
             }
             LwjglGlfwKeycode.SPECIALBTN_TOGGLECTRL,
             LwjglGlfwKeycode.SPECIALBTN_KEYBOARD,
-            LwjglGlfwKeycode.SPECIALBTN_MENU -> {
+            LwjglGlfwKeycode.SPECIALBTN_MENU,
+            LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO -> {
                 specialActionListener?.invoke(glfwKeycode, down)
                 return
             }
+        }
+
+        if (down && (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_ESCAPE
+                    || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_TAB
+                    || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_M)
+        ) {
+            menuKeyListener?.invoke(glfwKeycode)
         }
 
         val androidKey = LwjglGlfwKeycode.toAndroidKeyCode(glfwKeycode)
@@ -186,6 +209,11 @@ public object InputBridge {
 
     @JvmStatic
     fun sendMouseButton(button: Int, down: Boolean) {
+        if (button == MotionEvent.BUTTON_PRIMARY) {
+            isPrimaryMouseDown = down
+        } else if (button == MotionEvent.BUTTON_SECONDARY) {
+            isSecondaryMouseDown = down
+        }
         val svc = inputService ?: return
         try {
             svc.injectMouseButton(button, down)
@@ -217,6 +245,8 @@ public object InputBridge {
 
     @JvmStatic
     fun resetAll() {
+        isPrimaryMouseDown = false
+        isSecondaryMouseDown = false
         val svc = inputService ?: return
         try {
             svc.resetAllInputs()

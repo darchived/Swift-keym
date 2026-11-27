@@ -217,6 +217,10 @@ public class EditControlSideDialog {
                 data.isSwipeable = checked;
                 parentLayout.notifyLayoutModified();
             });
+            addSwitchRow(body, context.getString(R.string.edit_ctrl_macro_sequential), data.macroSequential, checked -> {
+                data.macroSequential = checked;
+                parentLayout.notifyLayoutModified();
+            });
         }
 
         // Drawer-specific orientation & + Add Sub-Button

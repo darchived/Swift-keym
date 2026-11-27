@@ -359,6 +359,7 @@ public class VisualBindPickerDialog {
 
         KeyCap[] overlayCaps = new KeyCap[]{
                 new KeyCap("Hide / Show HUD", LwjglGlfwKeycode.SPECIALBTN_TOGGLECTRL, 1f),
+                new KeyCap("Toggle Gyro", LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO, 1f),
                 new KeyCap("Toggle Edit Mode", LwjglGlfwKeycode.SPECIALBTN_MENU, 1f),
                 new KeyCap("Clear Slot (UNKNOWN)", LwjglGlfwKeycode.GLFW_KEY_UNKNOWN, 1f)
         };

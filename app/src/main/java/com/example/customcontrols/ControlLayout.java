@@ -6,6 +6,10 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.util.AttributeSet;
 import android.util.SparseArray;
 import android.view.Gravity;
@@ -66,6 +70,9 @@ public class ControlLayout extends FrameLayout {
     private float mAimSensitivity = 1.2f;
     private float mGlobalOpacity = 1.0f;
     private boolean mTouchRippleEnabled = true;
+    private boolean mHapticEnabled = true;
+    private boolean mPositionsLocked = false;
+    private Vibrator mVibrator;
 
     private final ArrayList<ControlButton> mButtons = new ArrayList<>();
     private final ArrayList<ControlDrawer> mDrawers = new ArrayList<>();
@@ -113,6 +120,19 @@ public class ControlLayout extends FrameLayout {
         addView(mResizeHandle);
 
         buildQuickActionBar(context);
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                VibratorManager vm = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+                if (vm != null) {
+                    mVibrator = vm.getDefaultVibrator();
+                }
+            } else {
+                @SuppressWarnings("deprecation")
+                Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+                mVibrator = v;
+            }
+        } catch (Throwable ignored) {}
     }
 
     private void buildQuickActionBar(Context context) {
@@ -332,11 +352,42 @@ public class ControlLayout extends FrameLayout {
         return mTouchRippleEnabled;
     }
 
+    public void setHapticEnabled(boolean enabled) {
+        this.mHapticEnabled = enabled;
+    }
+
+    public boolean isHapticEnabled() {
+        return mHapticEnabled;
+    }
+
+    public void setPositionsLocked(boolean locked) {
+        this.mPositionsLocked = locked;
+    }
+
+    public boolean isPositionsLocked() {
+        return mPositionsLocked;
+    }
+
     public void setOnTouchFeedbackListener(OnTouchFeedbackListener listener) {
         this.mTouchFeedbackListener = listener;
     }
 
+    private void performHapticTap() {
+        if (!mHapticEnabled || mVibrator == null) return;
+        try {
+            if (!mVibrator.hasVibrator()) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mVibrator.vibrate(VibrationEffect.createOneShot(12L, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                @SuppressWarnings("deprecation")
+                long duration = 12L;
+                mVibrator.vibrate(duration);
+            }
+        } catch (Throwable ignored) {}
+    }
+
     public void notifyTouchFeedback(float rawX, float rawY) {
+        performHapticTap();
         if (!mTouchRippleEnabled) return;
         if (mWindowHost != null) {
             mWindowHost.onTouchFeedback(rawX, rawY);
