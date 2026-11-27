@@ -229,9 +229,36 @@ public class ShizukuInputService extends IInputService.Stub {
         if (command == null || command.trim().isEmpty()) {
             return "1\n";
         }
+        List<String> args = tokenizeCommand(command);
+        if (args.isEmpty()) {
+            return "1\n";
+        }
+        return runProcess(args);
+    }
+
+    @Override
+    public boolean allowOverlayAppOps(String packageName) {
+        if (packageName == null || !packageName.matches("[a-zA-Z0-9._]+")) {
+            return false;
+        }
+        boolean restrictedCleared = runAppOpsAllow(packageName, "ACCESS_RESTRICTED_SETTINGS");
+        boolean overlayAllowed = runAppOpsAllow(packageName, "SYSTEM_ALERT_WINDOW");
+        return restrictedCleared || overlayAllowed;
+    }
+
+    private boolean runAppOpsAllow(String packageName, String op) {
+        String res = runProcess(java.util.Arrays.asList("cmd", "appops", "set", packageName, op, "allow"));
+        if (res.startsWith("0\n")) {
+            return true;
+        }
+        String fallback = runProcess(java.util.Arrays.asList("appops", "set", packageName, op, "allow"));
+        return fallback.startsWith("0\n");
+    }
+
+    private String runProcess(List<String> args) {
         Process process = null;
         try {
-            process = new ProcessBuilder("sh", "-c", command)
+            process = new ProcessBuilder(args)
                     .redirectErrorStream(true)
                     .start();
             java.io.BufferedReader reader = new java.io.BufferedReader(
@@ -246,12 +273,38 @@ public class ShizukuInputService extends IInputService.Stub {
             int exitCode = process.waitFor();
             return exitCode + "\n" + sb;
         } catch (Throwable t) {
-            return "-1\n" + (t.getMessage() != null ? t.getMessage() : "Shell execution error");
+            return "-1\n" + (t.getMessage() != null ? t.getMessage() : "Execution error");
         } finally {
             if (process != null) {
                 process.destroy();
             }
         }
+    }
+
+    private static List<String> tokenizeCommand(String cmd) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 0; i < cmd.length(); i++) {
+            char c = cmd.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+            } else if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+            } else if (Character.isWhitespace(c) && !inSingle && !inDouble) {
+                if (current.length() > 0) {
+                    tokens.add(current.toString());
+                    current.setLength(0);
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        if (current.length() > 0) {
+            tokens.add(current.toString());
+        }
+        return tokens;
     }
 
     @Override

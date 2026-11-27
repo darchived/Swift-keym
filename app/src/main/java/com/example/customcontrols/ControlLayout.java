@@ -43,6 +43,10 @@ public class ControlLayout extends FrameLayout {
         void onRequestImagePick(ImagePickCallback callback);
     }
 
+    public interface OnTouchFeedbackListener {
+        void onTouchFeedback(float rawX, float rawY);
+    }
+
     public interface WindowOverlayHost {
         int getOverlayScreenWidth();
         int getOverlayScreenHeight();
@@ -51,6 +55,7 @@ public class ControlLayout extends FrameLayout {
         void detachControlWindow(View view);
         int getControlWindowX(View view);
         int getControlWindowY(View view);
+        default void onTouchFeedback(float rawX, float rawY) {}
     }
 
     private static final int MAX_HISTORY = 50;
@@ -59,6 +64,8 @@ public class ControlLayout extends FrameLayout {
     private boolean mModifiable = false;
     private boolean mIsOverlayWindow = true;
     private float mAimSensitivity = 1.2f;
+    private float mGlobalOpacity = 1.0f;
+    private boolean mTouchRippleEnabled = true;
 
     private final ArrayList<ControlButton> mButtons = new ArrayList<>();
     private final ArrayList<ControlDrawer> mDrawers = new ArrayList<>();
@@ -71,6 +78,7 @@ public class ControlLayout extends FrameLayout {
     private OnLayoutModifiedListener mModifiedListener;
     private OnHistoryChangedListener mHistoryListener;
     private OnImagePickRequestListener mImagePickListener;
+    private OnTouchFeedbackListener mTouchFeedbackListener;
     private WindowOverlayHost mWindowHost;
 
     // Undo / Redo & Unsaved Tracking
@@ -294,6 +302,48 @@ public class ControlLayout extends FrameLayout {
 
     public float getAimSensitivity() {
         return mAimSensitivity;
+    }
+
+    public void setGlobalOpacity(float opacity) {
+        this.mGlobalOpacity = ControlUtils.clamp(opacity, 0.15f, 1.0f);
+        for (ControlButton btn : mButtons) {
+            btn.applyEffectiveOpacity();
+        }
+        for (ControlDrawer drawer : mDrawers) {
+            drawer.applyEffectiveOpacity();
+            for (ControlSubButton sub : drawer.getSubButtons()) {
+                sub.applyEffectiveOpacity();
+            }
+        }
+        for (ControlJoystick joy : mJoysticks) {
+            joy.applyEffectiveOpacity();
+        }
+    }
+
+    public float getGlobalOpacity() {
+        return mGlobalOpacity;
+    }
+
+    public void setTouchRippleEnabled(boolean enabled) {
+        this.mTouchRippleEnabled = enabled;
+    }
+
+    public boolean isTouchRippleEnabled() {
+        return mTouchRippleEnabled;
+    }
+
+    public void setOnTouchFeedbackListener(OnTouchFeedbackListener listener) {
+        this.mTouchFeedbackListener = listener;
+    }
+
+    public void notifyTouchFeedback(float rawX, float rawY) {
+        if (!mTouchRippleEnabled) return;
+        if (mWindowHost != null) {
+            mWindowHost.onTouchFeedback(rawX, rawY);
+        }
+        if (mTouchFeedbackListener != null) {
+            mTouchFeedbackListener.onTouchFeedback(rawX, rawY);
+        }
     }
 
     public void setOnLayoutModifiedListener(OnLayoutModifiedListener listener) {
@@ -691,6 +741,9 @@ public class ControlLayout extends FrameLayout {
                         mLastAimY = y;
                     }
                 } else {
+                    int[] loc = new int[2];
+                    getLocationOnScreen(loc);
+                    notifyTouchFeedback(loc[0] + x, loc[1] + y);
                     if (mAimPointerId == MotionEvent.INVALID_POINTER_ID) {
                         mAimPointerId = pid;
                         mLastAimX = x;

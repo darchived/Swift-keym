@@ -193,4 +193,66 @@ class ExampleRobolectricTest {
         assertFalse(result.isSuccess)
         assertTrue(result.output.isNotBlank())
     }
+
+    @Test
+    fun `global opacity scales controls and touch ripple dispatches feedback`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        var rippleHits = 0
+        val attached = LinkedHashMap<android.view.View, IntArray>()
+        val host = object : ControlLayout.WindowOverlayHost {
+            override fun getOverlayScreenWidth(): Int = 1920
+            override fun getOverlayScreenHeight(): Int = 1080
+            override fun attachControlWindow(view: android.view.View, x: Int, y: Int, width: Int, height: Int, visible: Boolean) {
+                attached[view] = intArrayOf(x, y, width, height)
+            }
+            override fun updateControlWindow(view: android.view.View, x: Int, y: Int, width: Int, height: Int, visible: Boolean) {}
+            override fun detachControlWindow(view: android.view.View) {
+                attached.remove(view)
+            }
+            override fun getControlWindowX(view: android.view.View): Int = 0
+            override fun getControlWindowY(view: android.view.View): Int = 0
+            override fun onTouchFeedback(rawX: Float, rawY: Float) {
+                rippleHits++
+            }
+        }
+
+        val layout = ControlLayout(context)
+        layout.setWindowOverlayHost(host)
+        layout.loadLayout(ControlLayoutManager.createDefaultFpsPreset())
+
+        layout.globalOpacity = 0.5f
+        ControlLayoutManager.setGlobalOpacity(context, 0.5f)
+        assertEquals(0.5f, ControlLayoutManager.getGlobalOpacity(context), 0.01f)
+        assertTrue(attached.keys.all { it.alpha <= 0.51f })
+
+        layout.isTouchRippleEnabled = true
+        layout.notifyTouchFeedback(500f, 300f)
+        assertEquals(1, rippleHits)
+
+        layout.isTouchRippleEnabled = false
+        layout.notifyTouchFeedback(500f, 300f)
+        assertEquals(1, rippleHits)
+    }
+
+    @Test
+    fun `preset manager creates duplicates renames and deletes game layouts in local storage`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val created = ControlLayoutManager.createNewPreset(
+            context,
+            "apex_mobile",
+            "Apex Legends",
+            ControlLayoutManager.createArenaShooterPreset()
+        )
+        assertTrue(ControlLayoutManager.listLayouts(context).any { it.fileName == created && it.gameName == "Apex Legends" })
+
+        val duplicated = ControlLayoutManager.duplicatePreset(context, created, "apex_custom")
+        assertTrue(ControlLayoutManager.listLayouts(context).any { it.fileName == duplicated })
+
+        val renamed = ControlLayoutManager.renamePreset(context, duplicated, "apex_ranked")
+        assertTrue(ControlLayoutManager.listLayouts(context).any { it.fileName == renamed })
+        assertFalse(ControlLayoutManager.listLayouts(context).any { it.fileName == duplicated })
+
+        assertTrue(ControlLayoutManager.deletePreset(context, renamed))
+        assertTrue(ControlLayoutManager.deletePreset(context, created))
+    }
 }

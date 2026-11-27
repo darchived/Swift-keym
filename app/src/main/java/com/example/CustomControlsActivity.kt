@@ -9,6 +9,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -24,18 +25,23 @@ import com.example.customcontrols.ControlLayoutManager
 import com.example.customcontrols.ExitConfirmDialog
 import com.example.customcontrols.utils.ControlUtils
 import com.example.overlay.OverlayService
+import com.example.overlay.TouchRippleOverlayView
+import java.util.Locale
 
 /**
  * Full-screen landscape HUD & Bind Editor locked to sensorLandscape in AndroidManifest.xml.
- * Hosts ControlLayout, top-center Undo / Cogwheel / Redo pill bar, Android Photo Picker,
- * and Exit / Unsaved Changes confirmation protection.
+ * Hosts ControlLayout, top-center Undo / Cogwheel / Redo pill bar, bottom Global Opacity slider,
+ * TouchRippleOverlayView, Android Photo Picker, and Exit / Unsaved Changes confirmation protection.
  */
 class CustomControlsActivity : ComponentActivity() {
 
     private lateinit var controlLayout: ControlLayout
+    private lateinit var rippleOverlay: TouchRippleOverlayView
     private lateinit var hintBox: LinearLayout
     private lateinit var undoBtn: ImageButton
     private lateinit var redoBtn: ImageButton
+    private lateinit var globalOpacitySeek: SeekBar
+    private lateinit var globalOpacityPct: TextView
     private var pendingImageCallback: ControlLayout.ImagePickCallback? = null
 
     private val pickMediaLauncher = registerForActivityResult(
@@ -94,7 +100,9 @@ class CustomControlsActivity : ComponentActivity() {
             setOverlayWindowMode(false)
             isModifiable = true
             aimSensitivity = ControlLayoutManager.getAimSensitivity(this@CustomControlsActivity)
+            isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this@CustomControlsActivity)
             loadLayout(ControlLayoutManager.loadActiveLayout(this@CustomControlsActivity))
+            globalOpacity = ControlLayoutManager.getGlobalOpacity(this@CustomControlsActivity)
             setImagePickListener { callback ->
                 pendingImageCallback = callback
                 pickMediaLauncher.launch(
@@ -109,6 +117,18 @@ class CustomControlsActivity : ComponentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
+
+        rippleOverlay = TouchRippleOverlayView(this)
+        root.addView(
+            rippleOverlay,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        controlLayout.setOnTouchFeedbackListener { rawX, rawY ->
+            rippleOverlay.spawnRipple(rawX, rawY)
+        }
 
         // Top-right instructions hint
         hintBox = LinearLayout(this).apply {
@@ -188,11 +208,100 @@ class CustomControlsActivity : ComponentActivity() {
         }
         root.addView(topBar, barLp)
 
+        // Bottom-center Global Opacity slider pill in HUD Editor
+        val opacityBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundResource(R.drawable.bg_pill_bar)
+            val hp = ControlUtils.dpToPx(this@CustomControlsActivity, 12f).toInt()
+            val vp = ControlUtils.dpToPx(this@CustomControlsActivity, 6f).toInt()
+            setPadding(hp, vp, hp, vp)
+            elevation = ControlUtils.dpToPx(this@CustomControlsActivity, 8f)
+        }
+
+        val initialPct = Math.round(controlLayout.globalOpacity * 100f).coerceIn(15, 100)
+        val opacityTitle = TextView(this).apply {
+            text = getString(R.string.editor_global_opacity)
+            setTextColor(0xFFE0E0E0.toInt())
+            textSize = 11.5f
+        }
+        globalOpacityPct = TextView(this).apply {
+            text = String.format(Locale.US, "%d%%", initialPct)
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 11.5f
+            gravity = Gravity.END
+            minWidth = ControlUtils.dpToPx(this@CustomControlsActivity, 38f).toInt()
+        }
+        globalOpacitySeek = SeekBar(this).apply {
+            max = 85 // 15% .. 100%
+            progress = (initialPct - 15).coerceIn(0, 85)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (!fromUser) return
+                    val pct = 15 + progress
+                    val value = pct / 100f
+                    globalOpacityPct.text = String.format(Locale.US, "%d%%", pct)
+                    controlLayout.globalOpacity = value
+                    ControlLayoutManager.setGlobalOpacity(this@CustomControlsActivity, value)
+                    notifyOverlayOpacityIfRunning()
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+
+        val seekLp = LinearLayout.LayoutParams(
+            ControlUtils.dpToPx(this, 165f).toInt(),
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            marginStart = ControlUtils.dpToPx(this@CustomControlsActivity, 8f).toInt()
+            marginEnd = ControlUtils.dpToPx(this@CustomControlsActivity, 6f).toInt()
+        }
+        opacityBar.addView(opacityTitle)
+        opacityBar.addView(globalOpacitySeek, seekLp)
+        opacityBar.addView(globalOpacityPct)
+
+        val opacityBarLp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply {
+            bottomMargin = ControlUtils.dpToPx(this@CustomControlsActivity, 12f).toInt()
+        }
+        root.addView(opacityBar, opacityBarLp)
+
         controlLayout.setOnHistoryChangedListener { canUndo, canRedo, _ ->
             updateHistoryButtons(canUndo, canRedo)
         }
 
         setContentView(root)
+    }
+
+    private fun syncOpacitySliderUi() {
+        val pct = Math.round(controlLayout.globalOpacity * 100f).coerceIn(15, 100)
+        globalOpacitySeek.progress = (pct - 15).coerceIn(0, 85)
+        globalOpacityPct.text = String.format(Locale.US, "%d%%", pct)
+    }
+
+    private fun notifyOverlayOpacityIfRunning() {
+        if (OverlayService.isRunning.value) {
+            startService(
+                Intent(this, OverlayService::class.java).apply {
+                    action = OverlayService.ACTION_UPDATE_OPACITY
+                }
+            )
+        }
+    }
+
+    private fun notifyOverlayRippleIfRunning() {
+        if (OverlayService.isRunning.value) {
+            startService(
+                Intent(this, OverlayService::class.java).apply {
+                    action = OverlayService.ACTION_UPDATE_RIPPLE
+                }
+            )
+        }
     }
 
     private fun updateHistoryButtons(canUndo: Boolean, canRedo: Boolean) {
@@ -277,6 +386,15 @@ class CustomControlsActivity : ComponentActivity() {
 
                 override fun onLayoutSaved() {
                     notifyOverlayReloadIfRunning()
+                }
+
+                override fun onGlobalOpacityChanged(opacity: Float) {
+                    syncOpacitySliderUi()
+                    notifyOverlayOpacityIfRunning()
+                }
+
+                override fun onTouchRippleToggled(enabled: Boolean) {
+                    notifyOverlayRippleIfRunning()
                 }
 
                 override fun onExitHost() {

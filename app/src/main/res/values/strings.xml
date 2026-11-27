@@ -14,15 +14,17 @@
     <string name="cog_add_button">Add button</string>
     <string name="cog_add_drawer">Add button drawer</string>
     <string name="cog_add_joystick">Add joystick</string>
-    <string name="cog_load">Load</string>
-    <string name="cog_save">Save</string>
-    <string name="cog_select_default">Select default controlmap</string>
+    <string name="cog_load">Load preset</string>
+    <string name="cog_save">Save preset as…</string>
+    <string name="cog_select_default">Game presets (built-in)</string>
     <string name="cog_export">Export controlmap</string>
+    <string name="cog_touch_ripple">Touch ripple indicator</string>
     <string name="cog_hide_hud">Hide HUD</string>
     <string name="cog_show_hud">Show HUD</string>
     <string name="cog_edit_mode">Edit Mode</string>
     <string name="cog_play_mode">Play Mode</string>
     <string name="cog_exit">Exit</string>
+    <string name="editor_global_opacity">Global Opacity</string>
     <string name="editor_hint_line1">Touch the top center cogwheel to open the context menu</string>
     <string name="editor_hint_line2">Tap a button to customize: edit, resize, remove, or change its keybinds.</string>
 

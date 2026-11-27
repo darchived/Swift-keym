@@ -16,8 +16,8 @@ android {
     applicationId = "com.stardevs.swiftkeym"
     minSdk = 26
     targetSdk = 34
-    versionCode = 1
-    versionName = "1.0.0-alpha"
+    versionCode = 2
+    versionName = "1.0.0-beta-testing"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

@@ -60,6 +60,8 @@ class OverlayService : Service() {
         const val ACTION_STOP = "com.example.overlay.ACTION_STOP"
         const val ACTION_RELOAD_LAYOUT = "com.example.overlay.ACTION_RELOAD_LAYOUT"
         const val ACTION_UPDATE_SENSITIVITY = "com.example.overlay.ACTION_UPDATE_SENSITIVITY"
+        const val ACTION_UPDATE_OPACITY = "com.example.overlay.ACTION_UPDATE_OPACITY"
+        const val ACTION_UPDATE_RIPPLE = "com.example.overlay.ACTION_UPDATE_RIPPLE"
 
         private const val CHANNEL_ID = "swift_keym_overlay_channel"
         private const val NOTIF_ID = 4102
@@ -100,6 +102,10 @@ class OverlayService : Service() {
     // Persistent draggable Floating Eye Button (Show / Hide GUI)
     private var eyeButton: ImageButton? = null
     private var eyeParams: WindowManager.LayoutParams? = null
+
+    // Visual-only (strictly FLAG_NOT_TOUCHABLE) Touch Ripple feedback window
+    private var touchRippleView: TouchRippleOverlayView? = null
+    private var touchRippleParams: WindowManager.LayoutParams? = null
 
     private var isHudHidden = false
 
@@ -208,6 +214,10 @@ class OverlayService : Service() {
         override fun getControlWindowX(view: View): Int = controlWindows[view]?.x ?: 0
 
         override fun getControlWindowY(view: View): Int = controlWindows[view]?.y ?: 0
+
+        override fun onTouchFeedback(rawX: Float, rawY: Float) {
+            spawnTouchRipple(rawX, rawY)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -234,6 +244,14 @@ class OverlayService : Service() {
                 controlLayout?.aimSensitivity = ControlLayoutManager.getAimSensitivity(this)
                 return START_STICKY
             }
+            ACTION_UPDATE_OPACITY -> {
+                controlLayout?.globalOpacity = ControlLayoutManager.getGlobalOpacity(this)
+                return START_STICKY
+            }
+            ACTION_UPDATE_RIPPLE -> {
+                controlLayout?.isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this)
+                return START_STICKY
+            }
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -248,7 +266,9 @@ class OverlayService : Service() {
             setupAimSwipeZoneWindow()
             // Layer 2 (Middle): Individual Control Windows via ControlLayout WindowOverlayHost
             setupDetachedControlLayout()
-            // Layer 3 (Top): Top Floating Bar & Persistent Floating Eye Button
+            // Layer 3 (Top Visual-Only): Non-touchable Touch Ripple window
+            setupTouchRippleWindow()
+            // Layer 4 (Top Chrome): Top Floating Bar & Persistent Floating Eye Button
             setupTopFloatingBar()
             setupFloatingEyeButton()
         }
@@ -343,10 +363,12 @@ class OverlayService : Service() {
             setOverlayWindowMode(true)
             setWindowOverlayHost(windowOverlayHost)
             aimSensitivity = ControlLayoutManager.getAimSensitivity(this@OverlayService)
+            isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this@OverlayService)
             setOnHistoryChangedListener { canUndo, canRedo, _ ->
                 updateOverlayHistoryButtons(canUndo, canRedo)
             }
             loadLayout(ControlLayoutManager.loadActiveLayout(this@OverlayService))
+            globalOpacity = ControlLayoutManager.getGlobalOpacity(this@OverlayService)
         }
         controlLayout = layout
 
@@ -357,6 +379,60 @@ class OverlayService : Service() {
                 LwjglGlfwKeycode.SPECIALBTN_MENU -> topBarRoot?.post { toggleEditMode() }
             }
         }
+    }
+
+    private fun setupTouchRippleWindow() {
+        val ripple = TouchRippleOverlayView(this)
+        val params = WindowManager.LayoutParams(
+            0,
+            0,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        ripple.visibility = View.GONE
+        ripple.onActiveStateChanged = { active ->
+            updateRippleWindowState(active)
+        }
+        touchRippleView = ripple
+        touchRippleParams = params
+        windowManager.addView(ripple, params)
+    }
+
+    private fun updateRippleWindowState(active: Boolean) {
+        val ripple = touchRippleView ?: return
+        val params = touchRippleParams ?: return
+        if (active && !isHudHidden) {
+            params.width = screenWidthPx
+            params.height = screenHeightPx
+            params.flags = BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            ripple.visibility = View.VISIBLE
+        } else {
+            params.width = 0
+            params.height = 0
+            params.flags = BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            ripple.visibility = View.GONE
+        }
+        if (ripple.isAttachedToWindow) {
+            try {
+                windowManager.updateViewLayout(ripple, params)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun spawnTouchRipple(rawX: Float, rawY: Float) {
+        if (isHudHidden) return
+        if (controlLayout?.isTouchRippleEnabled == false) return
+        touchRippleView?.spawnRipple(rawX, rawY)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -730,6 +806,7 @@ class OverlayService : Service() {
             hud.isModifiable = false
             setAimEnabled(false)
             hud.releaseAllActiveTouches()
+            touchRippleView?.clearRipples()
             InputBridge.resetAll()
 
             // Hide all individual button/joystick/drawer windows
@@ -820,10 +897,19 @@ class OverlayService : Service() {
                 }
             }
         }
+        touchRippleView?.let { view ->
+            if (view.isAttachedToWindow) {
+                try {
+                    windowManager.removeViewImmediate(view)
+                } catch (_: Throwable) {
+                }
+            }
+        }
 
         aimZoneView = null
         topBarRoot = null
         eyeButton = null
+        touchRippleView = null
         controlLayout = null
     }
 
@@ -858,6 +944,9 @@ class OverlayService : Service() {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                     val idx = event.actionIndex
+                    val loc = IntArray(2)
+                    getLocationOnScreen(loc)
+                    spawnTouchRipple(loc[0] + event.getX(idx), loc[1] + event.getY(idx))
                     if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
                         activePointerId = event.getPointerId(idx)
                         lastX = event.getX(idx)

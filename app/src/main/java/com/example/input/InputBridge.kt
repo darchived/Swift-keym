@@ -244,4 +244,15 @@ public object InputBridge {
             -1 to (e.message ?: "RemoteException")
         }
     }
+
+    @JvmStatic
+    fun allowOverlayAppOps(packageName: String): Boolean {
+        val svc = inputService ?: return false
+        return try {
+            svc.allowOverlayAppOps(packageName)
+        } catch (e: RemoteException) {
+            Log.w(TAG, "allowOverlayAppOps failed", e)
+            false
+        }
+    }
 }

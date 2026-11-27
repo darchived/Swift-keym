@@ -13,6 +13,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -38,6 +40,8 @@ public class CogwheelMenuDialog {
         boolean isOverlayHost();
         boolean isHudHidden();
         default void onLayoutSaved() {}
+        default void onGlobalOpacityChanged(float opacity) {}
+        default void onTouchRippleToggled(boolean enabled) {}
     }
 
     private final Context context;
@@ -220,6 +224,57 @@ public class CogwheelMenuDialog {
         sensRow.addView(plusBtn);
         list.addView(sensRow);
 
+        // Global Opacity live slider (15% - 100%)
+        LinearLayout opacityBox = new LinearLayout(context);
+        opacityBox.setOrientation(LinearLayout.VERTICAL);
+        opacityBox.setPadding(sp, sp, sp, sp);
+
+        int currentOpacityPct = Math.round(controlLayout.getGlobalOpacity() * 100f);
+        TextView opacityLabel = new TextView(context);
+        opacityLabel.setText(String.format(Locale.US, "Global Opacity: %d%%", currentOpacityPct));
+        opacityLabel.setTextColor(0xFFFFFFFF);
+        opacityLabel.setTextSize(12.5f);
+
+        SeekBar opacitySeek = new SeekBar(context);
+        opacitySeek.setMax(85); // 15..100
+        opacitySeek.setProgress(Math.max(0, Math.min(85, currentOpacityPct - 15)));
+        opacitySeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                int pct = 15 + progress;
+                float val = pct / 100f;
+                opacityLabel.setText(String.format(Locale.US, "Global Opacity: %d%%", pct));
+                controlLayout.setGlobalOpacity(val);
+                ControlLayoutManager.INSTANCE.setGlobalOpacity(context, val);
+                if (hostActions != null) hostActions.onGlobalOpacityChanged(val);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        opacityBox.addView(opacityLabel);
+        opacityBox.addView(opacitySeek);
+        list.addView(opacityBox);
+
+        // Touch Ripple feedback toggle
+        Switch rippleSwitch = new Switch(context);
+        rippleSwitch.setText(R.string.cog_touch_ripple);
+        rippleSwitch.setTextColor(0xFFFFFFFF);
+        rippleSwitch.setTextSize(13f);
+        rippleSwitch.setChecked(controlLayout.isTouchRippleEnabled());
+        rippleSwitch.setPadding(sp, sp, sp, sp);
+        rippleSwitch.setOnCheckedChangeListener((btn, isChecked) -> {
+            controlLayout.setTouchRippleEnabled(isChecked);
+            ControlLayoutManager.INSTANCE.setTouchRippleEnabled(context, isChecked);
+            if (hostActions != null) hostActions.onTouchRippleToggled(isChecked);
+        });
+        list.addView(rippleSwitch);
+        addDivider(list);
+
         // Edit / Play Mode toggle
         String modeLabel = controlLayout.isModifiable() ? "Switch to Play Mode" : "Switch to Edit Mode";
         addMenuItem(list, modeLabel, v -> {
@@ -317,18 +372,19 @@ public class CogwheelMenuDialog {
         List<LayoutProfileInfo> profiles = ControlLayoutManager.INSTANCE.listLayouts(context);
         String[] labels = new String[profiles.size()];
         for (int i = 0; i < profiles.size(); i++) {
-            labels[i] = profiles.get(i).getFileName();
+            LayoutProfileInfo info = profiles.get(i);
+            labels[i] = info.getDisplayName() + " (" + info.getGameName() + ")";
         }
         String folderPath = ControlLayoutManager.INSTANCE.getControlMapDir(context).getAbsolutePath();
         AlertDialog.Builder builder = new AlertDialog.Builder(context, android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle(folderPath);
+        builder.setTitle("Load Game Preset (" + profiles.size() + ")");
         builder.setItems(labels, (d, which) -> {
-            String chosen = labels[which];
+            String chosen = profiles.get(which).getFileName();
             try {
                 CustomControls loaded = ControlLayoutManager.INSTANCE.loadLayoutByName(context, chosen);
                 ControlLayoutManager.INSTANCE.setActiveLayoutName(context, chosen);
                 controlLayout.loadLayout(loaded);
-                Toast.makeText(context, "Loaded " + chosen, Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, "Loaded " + profiles.get(which).getDisplayName(), Toast.LENGTH_SHORT).show();
             } catch (Throwable t) {
                 Toast.makeText(context, "Failed to load " + chosen, Toast.LENGTH_SHORT).show();
             }
@@ -342,21 +398,42 @@ public class CogwheelMenuDialog {
     }
 
     private void showSaveControlMapDialog() {
-        EditText input = new EditText(context);
-        input.setText(ControlLayoutManager.INSTANCE.getActiveLayoutName(context).replace(".json", ""));
-        input.setTextColor(Color.WHITE);
-        input.setSingleLine(true);
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) ControlUtils.dpToPx(context, 16f);
+        container.setPadding(pad, pad / 2, pad, 0);
+
+        EditText nameInput = new EditText(context);
+        nameInput.setText(ControlLayoutManager.INSTANCE.getActiveLayoutName(context).replace(".json", ""));
+        nameInput.setHint("Preset name (e.g. codm_hud)");
+        nameInput.setTextColor(Color.WHITE);
+        nameInput.setHintTextColor(0xFF999999);
+        nameInput.setSingleLine(true);
+
+        EditText gameInput = new EditText(context);
+        gameInput.setText(controlLayout.getLayout() != null ? controlLayout.getLayout().gameName : "");
+        gameInput.setHint("Game label (e.g. Call of Duty Mobile)");
+        gameInput.setTextColor(Color.WHITE);
+        gameInput.setHintTextColor(0xFF999999);
+        gameInput.setSingleLine(true);
+
+        container.addView(nameInput);
+        container.addView(gameInput);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context, android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle("Save to controlmap/");
-        builder.setView(input);
+        builder.setTitle("Save Game Preset");
+        builder.setView(container);
         builder.setPositiveButton("SAVE", (d, w) -> {
-            String raw = input.getText().toString().trim();
-            if (raw.isEmpty()) raw = "custom_layout";
+            String raw = nameInput.getText().toString().trim();
+            if (raw.isEmpty()) raw = "custom_preset";
+            String game = gameInput.getText().toString().trim();
+            if (!game.isEmpty() && controlLayout.getLayout() != null) {
+                controlLayout.getLayout().gameName = game;
+            }
             String savedName = ControlLayoutManager.INSTANCE.saveLayoutAs(context, raw, controlLayout.getLayout());
             controlLayout.markSaved();
             if (hostActions != null) hostActions.onLayoutSaved();
-            Toast.makeText(context, "Saved " + savedName, Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "Saved preset " + savedName, Toast.LENGTH_SHORT).show();
         });
         builder.setNegativeButton("CANCEL", null);
         AlertDialog dlg = builder.create();
@@ -368,19 +445,38 @@ public class CogwheelMenuDialog {
 
     private void showSelectDefaultDialog() {
         String[] presets = new String[]{
-                ControlLayoutManager.DEFAULT_FPS_FILE + " (Warzone / FPS)",
-                ControlLayoutManager.DEFAULT_ACTION_FILE + " (Tactical / Action)"
+                "Warzone / CODM (FPS)",
+                "Action / RPG (Q/E/R + Stick)",
+                "Tactical Arena Shooter (Valorant / CS)",
+                "MOBA / ARPG (Q/W/E/R + D/F)"
         };
         AlertDialog.Builder builder = new AlertDialog.Builder(context, android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        builder.setTitle("Select default controlmap");
+        builder.setTitle("Built-in Game Presets");
         builder.setItems(presets, (d, which) -> {
-            CustomControls preset = (which == 0)
-                    ? ControlLayoutManager.INSTANCE.createDefaultFpsPreset()
-                    : ControlLayoutManager.INSTANCE.createDefaultActionPreset();
-            String fileName = (which == 0) ? ControlLayoutManager.DEFAULT_FPS_FILE : ControlLayoutManager.DEFAULT_ACTION_FILE;
+            CustomControls preset;
+            String fileName;
+            switch (which) {
+                case 1:
+                    preset = ControlLayoutManager.INSTANCE.createDefaultActionPreset();
+                    fileName = ControlLayoutManager.DEFAULT_ACTION_FILE;
+                    break;
+                case 2:
+                    preset = ControlLayoutManager.INSTANCE.createArenaShooterPreset();
+                    fileName = ControlLayoutManager.DEFAULT_ARENA_FILE;
+                    break;
+                case 3:
+                    preset = ControlLayoutManager.INSTANCE.createMobaArpgPreset();
+                    fileName = ControlLayoutManager.DEFAULT_MOBA_FILE;
+                    break;
+                case 0:
+                default:
+                    preset = ControlLayoutManager.INSTANCE.createDefaultFpsPreset();
+                    fileName = ControlLayoutManager.DEFAULT_FPS_FILE;
+                    break;
+            }
             ControlLayoutManager.INSTANCE.saveLayoutAs(context, fileName, preset);
             controlLayout.loadLayout(preset);
-            Toast.makeText(context, "Reset & loaded " + fileName, Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "Loaded " + presets[which], Toast.LENGTH_SHORT).show();
         });
         builder.setNegativeButton("CANCEL", null);
         AlertDialog dlg = builder.create();

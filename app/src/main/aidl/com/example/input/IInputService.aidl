@@ -7,5 +7,6 @@ interface IInputService {
     void injectMouseScroll(float vScroll, float hScroll) = 4;
     void resetAllInputs() = 5;
     String execShell(String command) = 6;
+    boolean allowOverlayAppOps(String packageName) = 7;
     void destroy() = 16777114;
 }

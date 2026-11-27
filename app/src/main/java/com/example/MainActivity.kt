@@ -36,8 +36,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.Layers
@@ -58,10 +63,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -138,8 +146,13 @@ class MainActivity : ComponentActivity() {
         var layouts by remember { mutableStateOf(ControlLayoutManager.listLayouts(context)) }
         var activeLayoutName by remember { mutableStateOf(ControlLayoutManager.getActiveLayoutName(context)) }
         var aimSensitivity by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensitivity(context)) }
+        var globalOpacity by remember { mutableFloatStateOf(ControlLayoutManager.getGlobalOpacity(context)) }
+        var touchRippleEnabled by remember { mutableStateOf(ControlLayoutManager.isTouchRippleEnabled(context)) }
         var previewJson by remember { mutableStateOf<String?>(null) }
         var showFolderDialog by remember { mutableStateOf(false) }
+        var showRestrictedGuideDialog by remember { mutableStateOf(false) }
+        var showNewPresetDialog by remember { mutableStateOf(false) }
+        var renameTarget by remember { mutableStateOf<LayoutProfileInfo?>(null) }
 
         val controlMapDirPath = remember {
             ControlLayoutManager.getControlMapDir(context).absolutePath
@@ -154,6 +167,8 @@ class MainActivity : ComponentActivity() {
             layouts = ControlLayoutManager.listLayouts(context)
             activeLayoutName = ControlLayoutManager.getActiveLayoutName(context)
             aimSensitivity = ControlLayoutManager.getAimSensitivity(context)
+            globalOpacity = ControlLayoutManager.getGlobalOpacity(context)
+            touchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(context)
         }
 
         DisposableEffect(lifecycleOwner) {
@@ -278,11 +293,26 @@ class MainActivity : ComponentActivity() {
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text(
-                                    text = "Swift KeyM",
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = PureWhite
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Swift KeyM",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        color = PureWhite
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        color = SurfaceElevatedGrey,
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(1.dp, BorderGrey)
+                                    ) {
+                                        Text(
+                                            text = "v${BuildConfig.VERSION_NAME}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SoftWhite,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                                 Text(
                                     text = "Non-Root Shizuku Keymapper",
                                     style = MaterialTheme.typography.labelMedium,
@@ -516,6 +546,65 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
+
+                            if (!hasOverlayPermission) {
+                                OutlinedButton(
+                                    onClick = { showRestrictedGuideDialog = true },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("restricted_settings_help_button"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, BorderGrey),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = BgDarkGrey,
+                                        contentColor = SoftWhite
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Build,
+                                        contentDescription = "Fix Restricted Settings"
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text("Fix Restricted Settings (App Info ⋮)")
+                                }
+
+                                if (isShizukuAlive && hasShizukuPerm) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            ShizukuHelper.unlockRestrictedAndOverlayAsync(context) { ok ->
+                                                hasOverlayPermission = Settings.canDrawOverlays(context)
+                                                Toast.makeText(
+                                                    context,
+                                                    if (hasOverlayPermission || ok) {
+                                                        "Overlay & Restricted Settings unlocked via Shizuku"
+                                                    } else {
+                                                        "Use App Info -> ⋮ -> Allow restricted settings"
+                                                    },
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("shizuku_unlock_overlay_button"),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.65f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = SurfaceElevatedGrey,
+                                            contentColor = PureWhite
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Layers,
+                                            contentDescription = "Auto-Unlock Overlay via Shizuku"
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text("Auto-Unlock Overlay via Shizuku")
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -577,14 +666,95 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                             Text(
-                                text = "Swiping empty background space injects relative mouse deltas (AXIS_RELATIVE_X/Y) for 360° FPS camera turning alongside WASD & MB1/MB2.",
+                                text = "Swiping the Aim Zone injects relative mouse deltas (AXIS_RELATIVE_X/Y) for 360° FPS camera turning alongside WASD & MB1/MB2.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MutedGrey
                             )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Global Button Opacity",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = "${Math.round(globalOpacity * 100f)}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+
+                            Slider(
+                                value = globalOpacity,
+                                onValueChange = { next ->
+                                    globalOpacity = next
+                                    ControlLayoutManager.setGlobalOpacity(context, next)
+                                    if (isOverlayRunning) {
+                                        context.startService(
+                                            Intent(context, OverlayService::class.java).apply {
+                                                action = OverlayService.ACTION_UPDATE_OPACITY
+                                            }
+                                        )
+                                    }
+                                },
+                                valueRange = 0.15f..1.0f,
+                                modifier = Modifier.testTag("global_opacity_slider"),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Touch Ripple Feedback",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "Show expanding ripple rings on registered overlay touches",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MutedGrey
+                                    )
+                                }
+                                Switch(
+                                    checked = touchRippleEnabled,
+                                    onCheckedChange = { enabled ->
+                                        touchRippleEnabled = enabled
+                                        ControlLayoutManager.setTouchRippleEnabled(context, enabled)
+                                        if (isOverlayRunning) {
+                                            context.startService(
+                                                Intent(context, OverlayService::class.java).apply {
+                                                    action = OverlayService.ACTION_UPDATE_RIPPLE
+                                                }
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("touch_ripple_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = BgDarkGrey,
+                                        checkedTrackColor = PureWhite,
+                                        uncheckedThumbColor = MutedGrey,
+                                        uncheckedTrackColor = BgDarkGrey
+                                    )
+                                )
+                            }
                         }
                     }
 
-                    // My Saved Layouts (controlmap/)
+                    // Game Presets (controlmap/)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = SurfaceGrey),
                         border = BorderStroke(1.dp, BorderGrey),
@@ -602,15 +772,23 @@ class MainActivity : ComponentActivity() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "My Saved Layouts (controlmap/)",
+                                    text = "Game Presets (controlmap/)",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = PureWhite
                                 )
-                                Text(
-                                    text = "${layouts.size} .json",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MutedGrey
-                                )
+                                TextButton(
+                                    onClick = { showNewPresetDialog = true },
+                                    modifier = Modifier.testTag("new_preset_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Add,
+                                        contentDescription = "New Preset",
+                                        tint = PureWhite,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("New Preset", color = PureWhite)
+                                }
                             }
 
                             Row(
@@ -633,7 +811,7 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.size(17.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("controlmap/", maxLines = 1)
+                                    Text("Folder", maxLines = 1)
                                 }
 
                                 OutlinedButton(
@@ -679,6 +857,7 @@ class MainActivity : ComponentActivity() {
                                 LayoutProfileCard(
                                     profile = profile,
                                     isSelected = profile.fileName == activeLayoutName,
+                                    canDelete = layouts.size > 1,
                                     onSelect = {
                                         ControlLayoutManager.setActiveLayoutName(context, profile.fileName)
                                         activeLayoutName = profile.fileName
@@ -692,6 +871,26 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onPreview = {
                                         previewJson = ControlLayoutManager.exportLayoutJson(context, profile.fileName)
+                                    },
+                                    onDuplicate = {
+                                        val copyName = profile.fileName.removeSuffix(".json") + "_copy"
+                                        ControlLayoutManager.duplicatePreset(context, profile.fileName, copyName)
+                                        refreshAll()
+                                        Toast.makeText(context, "Duplicated preset", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onRename = { renameTarget = profile },
+                                    onDelete = {
+                                        if (ControlLayoutManager.deletePreset(context, profile.fileName)) {
+                                            refreshAll()
+                                            if (isOverlayRunning) {
+                                                context.startService(
+                                                    Intent(context, OverlayService::class.java).apply {
+                                                        action = OverlayService.ACTION_RELOAD_LAYOUT
+                                                    }
+                                                )
+                                            }
+                                            Toast.makeText(context, "Deleted ${profile.displayName}", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 )
                             }
@@ -757,6 +956,169 @@ class MainActivity : ComponentActivity() {
                 dismissButton = {
                     TextButton(onClick = { showFolderDialog = false }) {
                         Text("Close", color = MutedGrey)
+                    }
+                }
+            )
+        }
+
+        if (showRestrictedGuideDialog) {
+            AlertDialog(
+                onDismissRequest = { showRestrictedGuideDialog = false },
+                containerColor = SurfaceGrey,
+                title = {
+                    Text(
+                        text = "Allow Restricted Settings",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = PureWhite
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Android 13–15 restricts Overlay permissions for sideloaded APKs until unlocked:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SoftWhite
+                        )
+                        Text(
+                            text = "1. Tap 'Open App Info' below.\n2. Tap the 3-dots (⋮) menu in the top-right corner.\n3. Tap 'Allow restricted settings', then return and grant 'Display over other apps'.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MutedGrey
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showRestrictedGuideDialog = false
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                    }) {
+                        Text("Open App Info", color = PureWhite)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRestrictedGuideDialog = false }) {
+                        Text("Close", color = MutedGrey)
+                    }
+                }
+            )
+        }
+
+        if (showNewPresetDialog) {
+            var presetName by remember { mutableStateOf("") }
+            var gameLabel by remember { mutableStateOf("") }
+            var templateIdx by remember { mutableStateOf(0) }
+            val templates = listOf(
+                "Warzone / CODM (FPS)",
+                "Action / RPG",
+                "Tactical Arena Shooter",
+                "MOBA / ARPG"
+            )
+            AlertDialog(
+                onDismissRequest = { showNewPresetDialog = false },
+                containerColor = SurfaceGrey,
+                title = {
+                    Text("Create Game Preset", style = MaterialTheme.typography.titleMedium, color = PureWhite)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = presetName,
+                            onValueChange = { presetName = it },
+                            label = { Text("Preset file name (e.g. apex_mobile)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = gameLabel,
+                            onValueChange = { gameLabel = it },
+                            label = { Text("Game title (e.g. Apex Legends)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text("Base Template:", style = MaterialTheme.typography.labelMedium, color = MutedGrey)
+                        templates.forEachIndexed { idx, title ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (templateIdx == idx) SurfaceElevatedGrey else BgDarkGrey)
+                                    .clickable { templateIdx = idx }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (templateIdx == idx) "● $title" else "○ $title",
+                                    color = if (templateIdx == idx) PureWhite else MutedGrey,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val seed = when (templateIdx) {
+                            1 -> ControlLayoutManager.createDefaultActionPreset()
+                            2 -> ControlLayoutManager.createArenaShooterPreset()
+                            3 -> ControlLayoutManager.createMobaArpgPreset()
+                            else -> ControlLayoutManager.createDefaultFpsPreset()
+                        }
+                        val created = ControlLayoutManager.createNewPreset(
+                            context,
+                            presetName.ifBlank { "custom_game" },
+                            gameLabel.ifBlank { templates[templateIdx] },
+                            seed
+                        )
+                        showNewPresetDialog = false
+                        refreshAll()
+                        Toast.makeText(context, "Created preset $created", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Create", color = PureWhite)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showNewPresetDialog = false }) {
+                        Text("Cancel", color = MutedGrey)
+                    }
+                }
+            )
+        }
+
+        renameTarget?.let { target ->
+            var nextName by remember(target) { mutableStateOf(target.fileName.removeSuffix(".json")) }
+            AlertDialog(
+                onDismissRequest = { renameTarget = null },
+                containerColor = SurfaceGrey,
+                title = {
+                    Text("Rename Preset", style = MaterialTheme.typography.titleMedium, color = PureWhite)
+                },
+                text = {
+                    OutlinedTextField(
+                        value = nextName,
+                        onValueChange = { nextName = it },
+                        label = { Text("New preset name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (nextName.isNotBlank()) {
+                            ControlLayoutManager.renamePreset(context, target.fileName, nextName)
+                            refreshAll()
+                        }
+                        renameTarget = null
+                    }) {
+                        Text("Save", color = PureWhite)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameTarget = null }) {
+                        Text("Cancel", color = MutedGrey)
                     }
                 }
             )
@@ -868,8 +1230,12 @@ private fun StatusPill(
 private fun LayoutProfileCard(
     profile: LayoutProfileInfo,
     isSelected: Boolean,
+    canDelete: Boolean,
     onSelect: () -> Unit,
-    onPreview: () -> Unit
+    onPreview: () -> Unit,
+    onDuplicate: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Surface(
         modifier = Modifier
@@ -883,7 +1249,7 @@ private fun LayoutProfileCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -897,17 +1263,48 @@ private fun LayoutProfileCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${profile.buttonCount} buttons · ${profile.joystickCount} stick · ${profile.drawerCount} drawer",
+                    text = "${profile.gameName} · ${profile.buttonCount} btn · ${profile.joystickCount} stick",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MutedGrey
+                    color = MutedGrey,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            IconButton(onClick = onPreview) {
-                Icon(
-                    imageVector = Icons.Filled.Visibility,
-                    contentDescription = "Inspect JSON",
-                    tint = MutedGrey
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onPreview) {
+                    Icon(
+                        imageVector = Icons.Filled.Visibility,
+                        contentDescription = "Inspect JSON",
+                        tint = MutedGrey,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onDuplicate) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = "Duplicate Preset",
+                        tint = MutedGrey,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onRename) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = "Rename Preset",
+                        tint = MutedGrey,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                if (canDelete) {
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = "Delete Preset",
+                            tint = MutedGrey,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
         }
     }

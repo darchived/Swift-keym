@@ -118,4 +118,22 @@ object ShizukuHelper {
             }
         }
     }
+
+    fun unlockRestrictedAndOverlayAsync(
+        context: Context,
+        onResult: (Boolean) -> Unit
+    ) {
+        if (!isShizukuAvailable() || !hasPermission()) {
+            onResult(false)
+            return
+        }
+        bindInputService(context)
+        val pkg = context.packageName
+        scope.launch {
+            val granted = InputBridge.allowOverlayAppOps(pkg)
+            withContext(Dispatchers.Main) {
+                onResult(granted)
+            }
+        }
+    }
 }

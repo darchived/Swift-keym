@@ -82,7 +82,7 @@ public class ControlJoystick extends View implements ControlInterface {
         int hPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), mProperties.getHeightPx(getContext()));
 
         mParentLayout.resizeManagedView(this, wPx, hPx);
-        setAlpha(ControlUtils.clamp(mProperties.opacity, 0.1f, 1.0f));
+        applyEffectiveOpacity();
 
         bgPaint.setColor(mProperties.bgColor);
         strokePaint.setColor(mProperties.strokeColor);
@@ -96,6 +96,11 @@ public class ControlJoystick extends View implements ControlInterface {
 
         regenerateDynamicCoordinates();
         invalidate();
+    }
+
+    public void applyEffectiveOpacity() {
+        float effective = mProperties.opacity * mParentLayout.getGlobalOpacity();
+        setAlpha(ControlUtils.clamp(effective, 0.08f, 1.0f));
     }
 
     @Override
@@ -202,7 +207,11 @@ public class ControlJoystick extends View implements ControlInterface {
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: {
+                int idx = event.getActionIndex();
+                int[] loc = new int[2];
+                getLocationOnScreen(loc);
+                mParentLayout.notifyTouchFeedback(loc[0] + event.getX(idx), loc[1] + event.getY(idx));
                 isTracking = true;
                 if (sprintLocked) {
                     sprintLocked = false;
@@ -217,6 +226,7 @@ public class ControlJoystick extends View implements ControlInterface {
                 updateStickPosition(event.getX(), event.getY(), radius);
                 invalidate();
                 return true;
+            }
 
             case MotionEvent.ACTION_MOVE:
                 if (isTracking) {

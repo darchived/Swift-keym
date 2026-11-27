@@ -85,9 +85,14 @@ public class ControlButton extends Button implements ControlInterface {
         String label = mProperties.name != null ? mProperties.name.trim() : "";
         setText(label);
 
-        setAlpha(ControlUtils.clamp(mProperties.opacity, 0.1f, 1.0f));
+        applyEffectiveOpacity();
         applyBackgroundDrawable();
         regenerateDynamicCoordinates();
+    }
+
+    public void applyEffectiveOpacity() {
+        float effective = mProperties.opacity * mParentLayout.getGlobalOpacity();
+        setAlpha(ControlUtils.clamp(effective, 0.08f, 1.0f));
     }
 
     protected void applyBackgroundDrawable() {
@@ -263,6 +268,10 @@ public class ControlButton extends Button implements ControlInterface {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN: {
+                int idx = event.getActionIndex();
+                int[] loc = new int[2];
+                getLocationOnScreen(loc);
+                mParentLayout.notifyTouchFeedback(loc[0] + event.getX(idx), loc[1] + event.getY(idx));
                 if (mProperties.isToggle) {
                     mIsToggled = !mIsToggled;
                     mIsPressed = mIsToggled;
@@ -276,7 +285,6 @@ public class ControlButton extends Button implements ControlInterface {
                     }
                 }
                 if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
-                    int idx = event.getActionIndex();
                     passThruPointerId = event.getPointerId(idx);
                     passThruLastRawX = event.getRawX();
                     passThruLastRawY = event.getRawY();

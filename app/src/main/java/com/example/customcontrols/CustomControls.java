@@ -15,6 +15,7 @@ import java.util.ArrayList;
 public class CustomControls {
     public int version = 8;
     public float scaledAt = 100f;
+    public String gameName = "";
     public ArrayList<ControlData> mControlDataList = new ArrayList<>();
     public ArrayList<ControlDrawerData> mDrawerDataList = new ArrayList<>();
     public ArrayList<ControlJoystickData> mJoystickDataList = new ArrayList<>();
@@ -25,6 +26,7 @@ public class CustomControls {
     }
 
     public void ensureValid() {
+        if (gameName == null) gameName = "";
         if (mControlDataList == null) mControlDataList = new ArrayList<>();
         if (mDrawerDataList == null) mDrawerDataList = new ArrayList<>();
         if (mJoystickDataList == null) mJoystickDataList = new ArrayList<>();
