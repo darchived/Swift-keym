@@ -224,4 +224,24 @@ public object InputBridge {
             Log.w(TAG, "resetAllInputs failed", e)
         }
     }
+
+    @JvmStatic
+    fun execShell(command: String): Pair<Int, String> {
+        val svc = inputService
+            ?: return -1 to "Shizuku service is not bound."
+        return try {
+            val raw = svc.execShell(command) ?: "1\n"
+            val nl = raw.indexOf('\n')
+            if (nl < 0) {
+                (raw.toIntOrNull() ?: 0) to ""
+            } else {
+                val code = raw.substring(0, nl).toIntOrNull() ?: -1
+                val output = raw.substring(nl + 1)
+                code to output
+            }
+        } catch (e: RemoteException) {
+            Log.e(TAG, "execShell failed", e)
+            -1 to (e.message ?: "RemoteException")
+        }
+    }
 }

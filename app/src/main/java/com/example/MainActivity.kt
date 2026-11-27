@@ -90,6 +90,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.customcontrols.ControlLayoutManager
 import com.example.customcontrols.LayoutProfileInfo
 import com.example.input.InputBridge
+import com.example.input.ShizukuHelper
 import com.example.overlay.OverlayService
 import com.example.ui.theme.BgDarkGrey
 import com.example.ui.theme.BorderGrey
@@ -113,7 +114,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        InputBridge.init()
+        ShizukuHelper.init()
         ControlLayoutManager.ensureDefaultLayouts(this)
 
         setContent {
@@ -146,9 +147,9 @@ class MainActivity : ComponentActivity() {
 
         fun refreshAll() {
             hasOverlayPermission = Settings.canDrawOverlays(context)
-            InputBridge.refreshShizukuState()
-            if (InputBridge.hasShizukuPermission.value) {
-                InputBridge.bindService(context)
+            ShizukuHelper.refreshState()
+            if (ShizukuHelper.hasPermission()) {
+                ShizukuHelper.bindInputService(context)
             }
             layouts = ControlLayoutManager.listLayouts(context)
             activeLayoutName = ControlLayoutManager.getActiveLayoutName(context)
@@ -163,9 +164,9 @@ class MainActivity : ComponentActivity() {
             }
             val shizukuPermListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
                 if (requestCode == REQ_CODE_SHIZUKU) {
-                    InputBridge.refreshShizukuState()
+                    ShizukuHelper.refreshState()
                     if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                        InputBridge.bindService(context)
+                        ShizukuHelper.bindInputService(context)
                         Toast.makeText(context, "Shizuku authorized", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Shizuku permission denied", Toast.LENGTH_SHORT).show()
@@ -173,10 +174,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
-            Shizuku.addRequestPermissionResultListener(shizukuPermListener)
+            ShizukuHelper.addPermissionResultListener(shizukuPermListener)
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
-                Shizuku.removeRequestPermissionResultListener(shizukuPermListener)
+                ShizukuHelper.removePermissionResultListener(shizukuPermListener)
             }
         }
 
@@ -477,17 +478,17 @@ class MainActivity : ComponentActivity() {
 
                             OutlinedButton(
                                 onClick = {
-                                    InputBridge.refreshShizukuState()
-                                    if (!InputBridge.isShizukuAlive.value) {
+                                    ShizukuHelper.refreshState()
+                                    if (!ShizukuHelper.isShizukuAvailable()) {
                                         Toast.makeText(
                                             context,
                                             "Start Shizuku first, then tap Authorize Shizuku.",
                                             Toast.LENGTH_LONG
                                         ).show()
-                                    } else if (!InputBridge.hasShizukuPermission.value) {
-                                        Shizuku.requestPermission(REQ_CODE_SHIZUKU)
+                                    } else if (!ShizukuHelper.hasPermission()) {
+                                        ShizukuHelper.requestPermission(REQ_CODE_SHIZUKU)
                                     } else {
-                                        InputBridge.bindService(context)
+                                        ShizukuHelper.bindInputService(context)
                                         Toast.makeText(context, "Shizuku InputService bound", Toast.LENGTH_SHORT).show()
                                     }
                                 },

@@ -43,6 +43,16 @@ public class ControlLayout extends FrameLayout {
         void onRequestImagePick(ImagePickCallback callback);
     }
 
+    public interface WindowOverlayHost {
+        int getOverlayScreenWidth();
+        int getOverlayScreenHeight();
+        void attachControlWindow(View view, int x, int y, int width, int height, boolean visible);
+        void updateControlWindow(View view, int x, int y, int width, int height, boolean visible);
+        void detachControlWindow(View view);
+        int getControlWindowX(View view);
+        int getControlWindowY(View view);
+    }
+
     private static final int MAX_HISTORY = 50;
 
     private CustomControls mLayout = new CustomControls();
@@ -61,6 +71,7 @@ public class ControlLayout extends FrameLayout {
     private OnLayoutModifiedListener mModifiedListener;
     private OnHistoryChangedListener mHistoryListener;
     private OnImagePickRequestListener mImagePickListener;
+    private WindowOverlayHost mWindowHost;
 
     // Undo / Redo & Unsaved Tracking
     private final ArrayList<String> mUndoStack = new ArrayList<>();
@@ -155,6 +166,118 @@ public class ControlLayout extends FrameLayout {
 
     public void setOverlayWindowMode(boolean isOverlay) {
         this.mIsOverlayWindow = isOverlay;
+    }
+
+    public void setWindowOverlayHost(WindowOverlayHost host) {
+        this.mWindowHost = host;
+        if (host != null) {
+            if (mResizeHandle != null) mResizeHandle.setVisibility(GONE);
+            if (mQuickActionBar != null) mQuickActionBar.setVisibility(GONE);
+        }
+    }
+
+    public boolean isDetachedWindowMode() {
+        return mWindowHost != null;
+    }
+
+    public int getLayoutWidthPx() {
+        if (mWindowHost != null) {
+            int w = mWindowHost.getOverlayScreenWidth();
+            if (w > 0) return w;
+        }
+        int w = getWidth();
+        return w > 0 ? w : ControlUtils.getScreenWidth(getContext());
+    }
+
+    public int getLayoutHeightPx() {
+        if (mWindowHost != null) {
+            int h = mWindowHost.getOverlayScreenHeight();
+            if (h > 0) return h;
+        }
+        int h = getHeight();
+        return h > 0 ? h : ControlUtils.getScreenHeight(getContext());
+    }
+
+    public void attachManagedView(View view, int x, int y, int w, int h, boolean visible) {
+        if (mWindowHost != null) {
+            mWindowHost.attachControlWindow(view, x, y, w, h, visible);
+        } else {
+            if (view.getParent() == null) {
+                addView(view);
+            }
+            view.setVisibility(visible ? VISIBLE : GONE);
+        }
+    }
+
+    public void detachManagedView(View view) {
+        if (mWindowHost != null) {
+            mWindowHost.detachControlWindow(view);
+        } else {
+            removeView(view);
+        }
+    }
+
+    public void resizeManagedView(View view, int w, int h) {
+        if (mWindowHost != null) {
+            mWindowHost.updateControlWindow(view, Integer.MIN_VALUE, Integer.MIN_VALUE, w, h, view.getVisibility() == VISIBLE);
+        } else {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) view.getLayoutParams();
+            if (lp == null) {
+                lp = new FrameLayout.LayoutParams(w, h);
+            } else {
+                lp.width = w;
+                lp.height = h;
+            }
+            view.setLayoutParams(lp);
+        }
+    }
+
+    public void setManagedViewPosition(View view, float x, float y) {
+        if (mWindowHost != null) {
+            mWindowHost.updateControlWindow(view, Math.round(x), Math.round(y), -1, -1, view.getVisibility() == VISIBLE);
+            if (view instanceof ControlDrawer) {
+                ((ControlDrawer) view).syncButtons();
+            }
+        } else {
+            view.setX(x);
+            view.setY(y);
+        }
+    }
+
+    public void setManagedViewVisibility(View view, boolean visible) {
+        if (mWindowHost != null) {
+            mWindowHost.updateControlWindow(view, Integer.MIN_VALUE, Integer.MIN_VALUE, -1, -1, visible);
+        } else {
+            view.setVisibility(visible ? VISIBLE : GONE);
+        }
+    }
+
+    public float getManagedViewX(View view) {
+        if (mWindowHost != null) {
+            return mWindowHost.getControlWindowX(view);
+        }
+        return view.getX();
+    }
+
+    public float getManagedViewY(View view) {
+        if (mWindowHost != null) {
+            return mWindowHost.getControlWindowY(view);
+        }
+        return view.getY();
+    }
+
+    public void relayoutAllControls() {
+        for (ControlButton btn : mButtons) {
+            btn.regenerateDynamicCoordinates();
+        }
+        for (ControlDrawer drawer : mDrawers) {
+            drawer.regenerateDynamicCoordinates();
+            drawer.syncButtons();
+        }
+        for (ControlJoystick joy : mJoysticks) {
+            joy.regenerateDynamicCoordinates();
+        }
+        syncSelectionOverlays();
     }
 
     public void setImagePickListener(OnImagePickRequestListener listener) {
@@ -310,18 +433,30 @@ public class ControlLayout extends FrameLayout {
         for (ControlData data : mLayout.mControlDataList) {
             ControlButton btn = new ControlButton(getContext(), this, data);
             mButtons.add(btn);
-            addView(btn);
+            int wPx = (int) Math.max(24f, data.getWidthPx(getContext()));
+            int hPx = (int) Math.max(24f, data.getHeightPx(getContext()));
+            int xPx = Math.round(data.calculateDynamicX(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+            int yPx = Math.round(data.calculateDynamicY(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+            attachManagedView(btn, xPx, yPx, wPx, hPx, true);
         }
         for (ControlDrawerData drawerData : mLayout.mDrawerDataList) {
             ControlDrawer drawer = new ControlDrawer(getContext(), this, drawerData);
             mDrawers.add(drawer);
-            addView(drawer);
+            int wPx = (int) Math.max(24f, drawerData.properties.getWidthPx(getContext()));
+            int hPx = (int) Math.max(24f, drawerData.properties.getHeightPx(getContext()));
+            int xPx = Math.round(drawerData.properties.calculateDynamicX(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+            int yPx = Math.round(drawerData.properties.calculateDynamicY(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+            attachManagedView(drawer, xPx, yPx, wPx, hPx, true);
             drawer.attachSubButtonsToParent();
         }
         for (ControlJoystickData joyData : mLayout.mJoystickDataList) {
             ControlJoystick joy = new ControlJoystick(getContext(), this, joyData);
             mJoysticks.add(joy);
-            addView(joy);
+            int wPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), joyData.getWidthPx(getContext()));
+            int hPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), joyData.getHeightPx(getContext()));
+            int xPx = Math.round(joyData.calculateDynamicX(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+            int yPx = Math.round(joyData.calculateDynamicY(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+            attachManagedView(joy, xPx, yPx, wPx, hPx, true);
         }
 
         bringOverlaysToFront();
@@ -329,6 +464,7 @@ public class ControlLayout extends FrameLayout {
     }
 
     private void bringOverlaysToFront() {
+        if (mWindowHost != null) return;
         if (mResizeHandle != null) mResizeHandle.bringToFront();
         if (mQuickActionBar != null) mQuickActionBar.bringToFront();
     }
@@ -336,18 +472,18 @@ public class ControlLayout extends FrameLayout {
     private void clearControls() {
         releaseAllActiveTouches();
         for (ControlButton btn : mButtons) {
-            removeView(btn);
+            detachManagedView(btn);
         }
         mButtons.clear();
 
         for (ControlDrawer drawer : mDrawers) {
             drawer.detachSubButtonsFromParent();
-            removeView(drawer);
+            detachManagedView(drawer);
         }
         mDrawers.clear();
 
         for (ControlJoystick joy : mJoysticks) {
-            removeView(joy);
+            detachManagedView(joy);
         }
         mJoysticks.clear();
 
@@ -360,7 +496,11 @@ public class ControlLayout extends FrameLayout {
         mLayout.mControlDataList.add(data);
         ControlButton btn = new ControlButton(getContext(), this, data);
         mButtons.add(btn);
-        addView(btn);
+        int wPx = (int) Math.max(24f, data.getWidthPx(getContext()));
+        int hPx = (int) Math.max(24f, data.getHeightPx(getContext()));
+        int xPx = Math.round(data.calculateDynamicX(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+        int yPx = Math.round(data.calculateDynamicY(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+        attachManagedView(btn, xPx, yPx, wPx, hPx, true);
         bringOverlaysToFront();
         if (mModifiable) {
             selectControl(btn, false);
@@ -371,7 +511,7 @@ public class ControlLayout extends FrameLayout {
         btn.releaseIfPressed();
         mButtons.remove(btn);
         mLayout.mControlDataList.remove(btn.getProperties());
-        removeView(btn);
+        detachManagedView(btn);
         if (mSelectedControl == btn) {
             selectControl(null, false);
         }
@@ -383,7 +523,11 @@ public class ControlLayout extends FrameLayout {
         mLayout.mDrawerDataList.add(drawerData);
         ControlDrawer drawer = new ControlDrawer(getContext(), this, drawerData);
         mDrawers.add(drawer);
-        addView(drawer);
+        int wPx = (int) Math.max(24f, drawerData.properties.getWidthPx(getContext()));
+        int hPx = (int) Math.max(24f, drawerData.properties.getHeightPx(getContext()));
+        int xPx = Math.round(drawerData.properties.calculateDynamicX(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+        int yPx = Math.round(drawerData.properties.calculateDynamicY(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+        attachManagedView(drawer, xPx, yPx, wPx, hPx, true);
         drawer.attachSubButtonsToParent();
         bringOverlaysToFront();
         if (mModifiable) {
@@ -394,7 +538,7 @@ public class ControlLayout extends FrameLayout {
     public void removeControlDrawer(ControlDrawer drawer) {
         mDrawers.remove(drawer);
         mLayout.mDrawerDataList.remove(drawer.getDrawerData());
-        removeView(drawer);
+        detachManagedView(drawer);
         if (mSelectedControl == drawer) {
             selectControl(null, false);
         }
@@ -406,7 +550,11 @@ public class ControlLayout extends FrameLayout {
         mLayout.mJoystickDataList.add(joyData);
         ControlJoystick joy = new ControlJoystick(getContext(), this, joyData);
         mJoysticks.add(joy);
-        addView(joy);
+        int wPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), joyData.getWidthPx(getContext()));
+        int hPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), joyData.getHeightPx(getContext()));
+        int xPx = Math.round(joyData.calculateDynamicX(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+        int yPx = Math.round(joyData.calculateDynamicY(getContext(), getLayoutWidthPx(), getLayoutHeightPx()));
+        attachManagedView(joy, xPx, yPx, wPx, hPx, true);
         bringOverlaysToFront();
         if (mModifiable) {
             selectControl(joy, false);
@@ -417,7 +565,7 @@ public class ControlLayout extends FrameLayout {
         joy.sendKeyPresses(false);
         mJoysticks.remove(joy);
         mLayout.mJoystickDataList.remove(joy.getProperties());
-        removeView(joy);
+        detachManagedView(joy);
         if (mSelectedControl == joy) {
             selectControl(null, false);
         }

@@ -81,14 +81,7 @@ public class ControlJoystick extends View implements ControlInterface {
         int wPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), mProperties.getWidthPx(getContext()));
         int hPx = (int) Math.max(ControlUtils.dpToPx(getContext(), 72f), mProperties.getHeightPx(getContext()));
 
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
-        if (lp == null) {
-            lp = new FrameLayout.LayoutParams(wPx, hPx);
-        } else {
-            lp.width = wPx;
-            lp.height = hPx;
-        }
-        setLayoutParams(lp);
+        mParentLayout.resizeManagedView(this, wPx, hPx);
         setAlpha(ControlUtils.clamp(mProperties.opacity, 0.1f, 1.0f));
 
         bgPaint.setColor(mProperties.bgColor);
@@ -107,15 +100,12 @@ public class ControlJoystick extends View implements ControlInterface {
 
     @Override
     public void regenerateDynamicCoordinates() {
-        int parentW = mParentLayout.getWidth();
-        int parentH = mParentLayout.getHeight();
-        if (parentW <= 0) parentW = ControlUtils.getScreenWidth(getContext());
-        if (parentH <= 0) parentH = ControlUtils.getScreenHeight(getContext());
+        int parentW = mParentLayout.getLayoutWidthPx();
+        int parentH = mParentLayout.getLayoutHeightPx();
 
         float x = mProperties.calculateDynamicX(getContext(), parentW, parentH);
         float y = mProperties.calculateDynamicY(getContext(), parentW, parentH);
-        setX(x);
-        setY(y);
+        mParentLayout.setManagedViewPosition(this, x, y);
     }
 
     @Override
@@ -170,8 +160,8 @@ public class ControlJoystick extends View implements ControlInterface {
             case MotionEvent.ACTION_DOWN:
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
-                startX = getX();
-                startY = getY();
+                startX = mParentLayout.getManagedViewX(this);
+                startY = mParentLayout.getManagedViewY(this);
                 hasMoved = false;
                 mParentLayout.selectControl(this, false);
                 return true;
@@ -183,13 +173,14 @@ public class ControlJoystick extends View implements ControlInterface {
                     hasMoved = true;
                 }
                 if (hasMoved) {
-                    float maxX = Math.max(0f, mParentLayout.getWidth() - getWidth());
-                    float maxY = Math.max(0f, mParentLayout.getHeight() - getHeight());
+                    int parentW = mParentLayout.getLayoutWidthPx();
+                    int parentH = mParentLayout.getLayoutHeightPx();
+                    float maxX = Math.max(0f, parentW - getWidth());
+                    float maxY = Math.max(0f, parentH - getHeight());
                     float newX = ControlUtils.clamp(startX + dx, 0f, maxX);
                     float newY = ControlUtils.clamp(startY + dy, 0f, maxY);
-                    setX(newX);
-                    setY(newY);
-                    mProperties.setStaticPosition(newX, newY, mParentLayout.getWidth(), mParentLayout.getHeight());
+                    mParentLayout.setManagedViewPosition(this, newX, newY);
+                    mProperties.setStaticPosition(newX, newY, parentW, parentH);
                     mParentLayout.syncSelectionOverlays();
                 }
                 return true;
@@ -321,8 +312,12 @@ public class ControlJoystick extends View implements ControlInterface {
         ControlJoystickData cloned = new ControlJoystickData(mProperties);
         cloned.name = cloned.name + " Copy";
         float offsetPx = ControlUtils.dpToPx(getContext(), 24f);
-        cloned.setStaticPosition(getX() + offsetPx, getY() + offsetPx,
-                Math.max(1, mParentLayout.getWidth()), Math.max(1, mParentLayout.getHeight()));
+        cloned.setStaticPosition(
+                mParentLayout.getManagedViewX(this) + offsetPx,
+                mParentLayout.getManagedViewY(this) + offsetPx,
+                Math.max(1, mParentLayout.getLayoutWidthPx()),
+                Math.max(1, mParentLayout.getLayoutHeightPx())
+        );
         mParentLayout.addControlJoystick(cloned);
         mParentLayout.notifyLayoutModified();
     }

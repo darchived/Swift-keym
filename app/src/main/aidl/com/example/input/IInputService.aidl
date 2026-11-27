@@ -6,5 +6,6 @@ interface IInputService {
     void injectMouseMove(float dx, float dy) = 3;
     void injectMouseScroll(float vScroll, float hScroll) = 4;
     void resetAllInputs() = 5;
+    String execShell(String command) = 6;
     void destroy() = 16777114;
 }

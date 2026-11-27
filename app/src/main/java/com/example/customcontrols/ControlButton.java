@@ -80,14 +80,7 @@ public class ControlButton extends Button implements ControlInterface {
         int wPx = (int) Math.max(24f, mProperties.getWidthPx(getContext()));
         int hPx = (int) Math.max(24f, mProperties.getHeightPx(getContext()));
 
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
-        if (lp == null) {
-            lp = new FrameLayout.LayoutParams(wPx, hPx);
-        } else {
-            lp.width = wPx;
-            lp.height = hPx;
-        }
-        setLayoutParams(lp);
+        mParentLayout.resizeManagedView(this, wPx, hPx);
 
         String label = mProperties.name != null ? mProperties.name.trim() : "";
         setText(label);
@@ -160,15 +153,12 @@ public class ControlButton extends Button implements ControlInterface {
 
     @Override
     public void regenerateDynamicCoordinates() {
-        int parentW = mParentLayout.getWidth();
-        int parentH = mParentLayout.getHeight();
-        if (parentW <= 0) parentW = ControlUtils.getScreenWidth(getContext());
-        if (parentH <= 0) parentH = ControlUtils.getScreenHeight(getContext());
+        int parentW = mParentLayout.getLayoutWidthPx();
+        int parentH = mParentLayout.getLayoutHeightPx();
 
         float x = mProperties.calculateDynamicX(getContext(), parentW, parentH);
         float y = mProperties.calculateDynamicY(getContext(), parentW, parentH);
-        setX(x);
-        setY(y);
+        mParentLayout.setManagedViewPosition(this, x, y);
     }
 
     @Override
@@ -186,9 +176,14 @@ public class ControlButton extends Button implements ControlInterface {
         ControlData cloned = mProperties.cloneData();
         cloned.name = cloned.name.isEmpty() ? "Copy" : cloned.name + " Copy";
         float offsetPx = ControlUtils.dpToPx(getContext(), 20f);
-        int parentW = Math.max(1, mParentLayout.getWidth());
-        int parentH = Math.max(1, mParentLayout.getHeight());
-        cloned.setStaticPosition(getX() + offsetPx, getY() + offsetPx, parentW, parentH);
+        int parentW = Math.max(1, mParentLayout.getLayoutWidthPx());
+        int parentH = Math.max(1, mParentLayout.getLayoutHeightPx());
+        cloned.setStaticPosition(
+                mParentLayout.getManagedViewX(this) + offsetPx,
+                mParentLayout.getManagedViewY(this) + offsetPx,
+                parentW,
+                parentH
+        );
         mParentLayout.addControlButton(cloned);
         mParentLayout.notifyLayoutModified();
     }
@@ -218,8 +213,8 @@ public class ControlButton extends Button implements ControlInterface {
             case MotionEvent.ACTION_DOWN:
                 downRawX = event.getRawX();
                 downRawY = event.getRawY();
-                startX = getX();
-                startY = getY();
+                startX = mParentLayout.getManagedViewX(this);
+                startY = mParentLayout.getManagedViewY(this);
                 hasMoved = false;
                 mParentLayout.selectControl(this, false);
                 return true;
@@ -231,13 +226,14 @@ public class ControlButton extends Button implements ControlInterface {
                     hasMoved = true;
                 }
                 if (hasMoved) {
-                    float maxX = Math.max(0f, mParentLayout.getWidth() - getWidth());
-                    float maxY = Math.max(0f, mParentLayout.getHeight() - getHeight());
+                    int parentW = mParentLayout.getLayoutWidthPx();
+                    int parentH = mParentLayout.getLayoutHeightPx();
+                    float maxX = Math.max(0f, parentW - getWidth());
+                    float maxY = Math.max(0f, parentH - getHeight());
                     float newX = ControlUtils.clamp(startX + dx, 0f, maxX);
                     float newY = ControlUtils.clamp(startY + dy, 0f, maxY);
-                    setX(newX);
-                    setY(newY);
-                    mProperties.setStaticPosition(newX, newY, mParentLayout.getWidth(), mParentLayout.getHeight());
+                    mParentLayout.setManagedViewPosition(this, newX, newY);
+                    mProperties.setStaticPosition(newX, newY, parentW, parentH);
                     mParentLayout.syncSelectionOverlays();
                 }
                 return true;
@@ -251,15 +247,22 @@ public class ControlButton extends Button implements ControlInterface {
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
+                if (hasMoved) {
+                    mParentLayout.notifyLayoutModified();
+                }
                 return true;
         }
         return true;
     }
 
+    private int passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+    private float passThruLastRawX = 0f;
+    private float passThruLastRawY = 0f;
+
     protected boolean handlePlayTouch(MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: {
                 if (mProperties.isToggle) {
                     mIsToggled = !mIsToggled;
                     mIsPressed = mIsToggled;
@@ -272,11 +275,36 @@ public class ControlButton extends Button implements ControlInterface {
                         sendKeyPresses(true);
                     }
                 }
+                if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
+                    int idx = event.getActionIndex();
+                    passThruPointerId = event.getPointerId(idx);
+                    passThruLastRawX = event.getRawX();
+                    passThruLastRawY = event.getRawY();
+                }
                 return true;
+            }
+
+            case MotionEvent.ACTION_MOVE: {
+                if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()
+                        && passThruPointerId != MotionEvent.INVALID_POINTER_ID) {
+                    float currX = event.getRawX();
+                    float currY = event.getRawY();
+                    float dx = currX - passThruLastRawX;
+                    float dy = currY - passThruLastRawY;
+                    passThruLastRawX = currX;
+                    passThruLastRawY = currY;
+                    if (dx != 0f || dy != 0f) {
+                        float sens = mParentLayout.getAimSensitivity();
+                        InputBridge.sendMouseMove(dx * sens, dy * sens);
+                    }
+                }
+                return true;
+            }
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_POINTER_UP:
             case MotionEvent.ACTION_CANCEL:
+                passThruPointerId = MotionEvent.INVALID_POINTER_ID;
                 if (!mProperties.isToggle && mIsPressed) {
                     mIsPressed = false;
                     applyBackgroundDrawable();
@@ -288,6 +316,7 @@ public class ControlButton extends Button implements ControlInterface {
     }
 
     public void releaseIfPressed() {
+        passThruPointerId = MotionEvent.INVALID_POINTER_ID;
         if (mIsPressed || mIsToggled) {
             mIsPressed = false;
             mIsToggled = false;

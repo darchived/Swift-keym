@@ -40,10 +40,15 @@ public class ControlDrawer extends ControlButton {
     }
 
     public void attachSubButtonsToParent() {
+        boolean shouldShow = mDrawerData.open || mParentLayout.isModifiable();
         for (ControlSubButton sub : mSubButtons) {
-            if (sub.getParent() == null) {
-                mParentLayout.addView(sub);
-            }
+            int wPx = (int) Math.max(24f, sub.getProperties().getWidthPx(getContext()));
+            int hPx = (int) Math.max(24f, sub.getProperties().getHeightPx(getContext()));
+            int xPx = Math.round(sub.getProperties().calculateDynamicX(getContext(),
+                    mParentLayout.getLayoutWidthPx(), mParentLayout.getLayoutHeightPx()));
+            int yPx = Math.round(sub.getProperties().calculateDynamicY(getContext(),
+                    mParentLayout.getLayoutWidthPx(), mParentLayout.getLayoutHeightPx()));
+            mParentLayout.attachManagedView(sub, xPx, yPx, wPx, hPx, shouldShow);
         }
         syncButtons();
     }
@@ -51,7 +56,7 @@ public class ControlDrawer extends ControlButton {
     public void detachSubButtonsFromParent() {
         for (ControlSubButton sub : mSubButtons) {
             sub.releaseIfPressed();
-            mParentLayout.removeView(sub);
+            mParentLayout.detachManagedView(sub);
         }
     }
 
@@ -61,7 +66,11 @@ public class ControlDrawer extends ControlButton {
         mDrawerData.buttonProperties.add(data);
         ControlSubButton sub = new ControlSubButton(getContext(), mParentLayout, this, data);
         mSubButtons.add(sub);
-        mParentLayout.addView(sub);
+        boolean shouldShow = mDrawerData.open || mParentLayout.isModifiable();
+        int wPx = (int) Math.max(24f, data.getWidthPx(getContext()));
+        int hPx = (int) Math.max(24f, data.getHeightPx(getContext()));
+        mParentLayout.attachManagedView(sub, Math.round(mParentLayout.getManagedViewX(this)),
+                Math.round(mParentLayout.getManagedViewY(this)), wPx, hPx, shouldShow);
         syncButtons();
     }
 
@@ -69,7 +78,7 @@ public class ControlDrawer extends ControlButton {
         sub.releaseIfPressed();
         mSubButtons.remove(sub);
         mDrawerData.buttonProperties.remove(sub.getProperties());
-        mParentLayout.removeView(sub);
+        mParentLayout.detachManagedView(sub);
         syncButtons();
     }
 
@@ -95,8 +104,8 @@ public class ControlDrawer extends ControlButton {
         if (mSubButtons == null) return;
         boolean shouldShow = mDrawerData.open || mParentLayout.isModifiable();
         float gapPx = ControlUtils.dpToPx(getContext(), 4f);
-        float baseX = getX();
-        float baseY = getY();
+        float baseX = mParentLayout.getManagedViewX(this);
+        float baseY = mParentLayout.getManagedViewY(this);
         float selfW = mProperties.getWidthPx(getContext());
         float selfH = mProperties.getHeightPx(getContext());
 
@@ -105,7 +114,7 @@ public class ControlDrawer extends ControlButton {
 
         for (int i = 0; i < mSubButtons.size(); i++) {
             ControlSubButton sub = mSubButtons.get(i);
-            sub.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
+            mParentLayout.setManagedViewVisibility(sub, shouldShow);
             if (!shouldShow) continue;
 
             float subW = sub.getProperties().getWidthPx(getContext());
@@ -114,23 +123,19 @@ public class ControlDrawer extends ControlButton {
             switch (mDrawerData.orientation) {
                 case ControlDrawerData.ORIENTATION_DOWN:
                     offsetY += (i == 0 ? selfH : mSubButtons.get(i - 1).getProperties().getHeightPx(getContext())) + gapPx;
-                    sub.setX(baseX);
-                    sub.setY(baseY + offsetY);
+                    mParentLayout.setManagedViewPosition(sub, baseX, baseY + offsetY);
                     break;
                 case ControlDrawerData.ORIENTATION_UP:
                     offsetY -= subH + gapPx;
-                    sub.setX(baseX);
-                    sub.setY(baseY + offsetY);
+                    mParentLayout.setManagedViewPosition(sub, baseX, baseY + offsetY);
                     break;
                 case ControlDrawerData.ORIENTATION_RIGHT:
                     offsetX += (i == 0 ? selfW : mSubButtons.get(i - 1).getProperties().getWidthPx(getContext())) + gapPx;
-                    sub.setX(baseX + offsetX);
-                    sub.setY(baseY);
+                    mParentLayout.setManagedViewPosition(sub, baseX + offsetX, baseY);
                     break;
                 case ControlDrawerData.ORIENTATION_LEFT:
                     offsetX -= subW + gapPx;
-                    sub.setX(baseX + offsetX);
-                    sub.setY(baseY);
+                    mParentLayout.setManagedViewPosition(sub, baseX + offsetX, baseY);
                     break;
                 case ControlDrawerData.ORIENTATION_FREE:
                 default:
@@ -156,8 +161,12 @@ public class ControlDrawer extends ControlButton {
         ControlDrawerData cloned = new ControlDrawerData(mDrawerData);
         cloned.properties.name = cloned.properties.name + " Copy";
         float offsetPx = ControlUtils.dpToPx(getContext(), 24f);
-        cloned.properties.setStaticPosition(getX() + offsetPx, getY() + offsetPx,
-                Math.max(1, mParentLayout.getWidth()), Math.max(1, mParentLayout.getHeight()));
+        cloned.properties.setStaticPosition(
+                mParentLayout.getManagedViewX(this) + offsetPx,
+                mParentLayout.getManagedViewY(this) + offsetPx,
+                Math.max(1, mParentLayout.getLayoutWidthPx()),
+                Math.max(1, mParentLayout.getLayoutHeightPx())
+        );
         mParentLayout.addControlDrawer(cloned);
         mParentLayout.notifyLayoutModified();
     }

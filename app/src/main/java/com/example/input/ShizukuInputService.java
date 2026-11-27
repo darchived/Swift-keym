@@ -225,6 +225,36 @@ public class ShizukuInputService extends IInputService.Stub {
     }
 
     @Override
+    public String execShell(String command) {
+        if (command == null || command.trim().isEmpty()) {
+            return "1\n";
+        }
+        Process process = null;
+        try {
+            process = new ProcessBuilder("sh", "-c", command)
+                    .redirectErrorStream(true)
+                    .start();
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream())
+            );
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(line);
+            }
+            int exitCode = process.waitFor();
+            return exitCode + "\n" + sb;
+        } catch (Throwable t) {
+            return "-1\n" + (t.getMessage() != null ? t.getMessage() : "Shell execution error");
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+    }
+
+    @Override
     public void destroy() {
         try {
             resetAllInputs();

@@ -123,4 +123,74 @@ class ExampleRobolectricTest {
         move.recycle()
         up.recycle()
     }
+
+    @Test
+    fun `detached window overlay host attaches individual control windows without adding children to root`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val attached = LinkedHashMap<android.view.View, IntArray>()
+        val host = object : ControlLayout.WindowOverlayHost {
+            override fun getOverlayScreenWidth(): Int = 1920
+            override fun getOverlayScreenHeight(): Int = 1080
+            override fun attachControlWindow(
+                view: android.view.View,
+                x: Int,
+                y: Int,
+                width: Int,
+                height: Int,
+                visible: Boolean
+            ) {
+                attached[view] = intArrayOf(x, y, width, height, if (visible) 1 else 0)
+            }
+
+            override fun updateControlWindow(
+                view: android.view.View,
+                x: Int,
+                y: Int,
+                width: Int,
+                height: Int,
+                visible: Boolean
+            ) {
+                val cur = attached[view] ?: intArrayOf(0, 0, 0, 0, 0)
+                if (x != Int.MIN_VALUE) cur[0] = x
+                if (y != Int.MIN_VALUE) cur[1] = y
+                if (width > 0) cur[2] = width
+                if (height > 0) cur[3] = height
+                cur[4] = if (visible) 1 else 0
+                attached[view] = cur
+            }
+
+            override fun detachControlWindow(view: android.view.View) {
+                attached.remove(view)
+            }
+
+            override fun getControlWindowX(view: android.view.View): Int = attached[view]?.get(0) ?: 0
+            override fun getControlWindowY(view: android.view.View): Int = attached[view]?.get(1) ?: 0
+        }
+
+        val layout = ControlLayout(context)
+        layout.setWindowOverlayHost(host)
+        val preset = ControlLayoutManager.createDefaultFpsPreset()
+        layout.loadLayout(preset)
+
+        // ControlLayout itself should only contain the 2 editor chrome views (resize handle + quick bar), not buttons
+        assertEquals(2, layout.childCount)
+        assertTrue(layout.isDetachedWindowMode)
+        val expectedControls = preset.mControlDataList.size +
+            preset.mDrawerDataList.size +
+            preset.mDrawerDataList.sumOf { it.buttonProperties.size } +
+            preset.mJoystickDataList.size
+        assertEquals(expectedControls, attached.size)
+        // Each individual window is strictly sized to its control bounds, never full-screen
+        assertTrue(attached.values.all { it[2] < 1920 && it[3] < 1080 })
+    }
+
+    @Test
+    fun `shizuku helper handles unrunning shizuku daemon safely`() {
+        com.example.input.ShizukuHelper.init()
+        assertFalse(com.example.input.ShizukuHelper.isShizukuAvailable())
+        assertFalse(com.example.input.ShizukuHelper.hasPermission())
+        val result = com.example.input.ShizukuHelper.executeShellCommand("echo hello")
+        assertFalse(result.isSuccess)
+        assertTrue(result.output.isNotBlank())
+    }
 }
