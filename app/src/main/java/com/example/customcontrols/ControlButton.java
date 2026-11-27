@@ -294,34 +294,38 @@ public class ControlButton extends Button implements ControlInterface {
         return true;
     }
 
+    private int activePointerId = MotionEvent.INVALID_POINTER_ID;
     private int passThruPointerId = MotionEvent.INVALID_POINTER_ID;
-    private float passThruLastRawX = 0f;
-    private float passThruLastRawY = 0f;
+    private float passThruLastX = 0f;
+    private float passThruLastY = 0f;
 
     protected boolean handlePlayTouch(MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN: {
                 int idx = event.getActionIndex();
+                int pid = event.getPointerId(idx);
                 int[] loc = new int[2];
                 getLocationOnScreen(loc);
                 mParentLayout.notifyTouchFeedback(loc[0] + event.getX(idx), loc[1] + event.getY(idx));
-                if (mProperties.isToggle) {
-                    mIsToggled = !mIsToggled;
-                    mIsPressed = mIsToggled;
-                    applyBackgroundDrawable();
-                    sendKeyPresses(mIsToggled);
-                } else {
-                    if (!mIsPressed) {
+                if (activePointerId == MotionEvent.INVALID_POINTER_ID
+                        || event.findPointerIndex(activePointerId) < 0) {
+                    activePointerId = pid;
+                    if (mProperties.isToggle) {
+                        mIsToggled = !mIsToggled;
+                        mIsPressed = mIsToggled;
+                        applyBackgroundDrawable();
+                        sendKeyPresses(mIsToggled);
+                    } else if (!mIsPressed) {
                         mIsPressed = true;
                         applyBackgroundDrawable();
                         sendKeyPresses(true);
                     }
-                }
-                if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
-                    passThruPointerId = event.getPointerId(idx);
-                    passThruLastRawX = event.getRawX();
-                    passThruLastRawY = event.getRawY();
+                    if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
+                        passThruPointerId = pid;
+                        passThruLastX = event.getX(idx);
+                        passThruLastY = event.getY(idx);
+                    }
                 }
                 return true;
             }
@@ -329,23 +333,59 @@ public class ControlButton extends Button implements ControlInterface {
             case MotionEvent.ACTION_MOVE: {
                 if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()
                         && passThruPointerId != MotionEvent.INVALID_POINTER_ID) {
-                    float currX = event.getRawX();
-                    float currY = event.getRawY();
-                    float dx = currX - passThruLastRawX;
-                    float dy = currY - passThruLastRawY;
-                    passThruLastRawX = currX;
-                    passThruLastRawY = currY;
-                    if (dx != 0f || dy != 0f) {
-                        float sens = mParentLayout.getAimSensitivity();
-                        InputBridge.sendMouseMove(dx * sens, dy * sens);
+                    int idx = event.findPointerIndex(passThruPointerId);
+                    if (idx >= 0) {
+                        float currX = event.getX(idx);
+                        float currY = event.getY(idx);
+                        float dx = currX - passThruLastX;
+                        float dy = currY - passThruLastY;
+                        passThruLastX = currX;
+                        passThruLastY = currY;
+                        if (dx != 0f || dy != 0f) {
+                            float sens = mParentLayout.getAimSensitivity();
+                            InputBridge.sendMouseMove(dx * sens, dy * sens);
+                        }
+                    }
+                }
+                return true;
+            }
+
+            case MotionEvent.ACTION_POINTER_UP: {
+                int idx = event.getActionIndex();
+                int liftedId = event.getPointerId(idx);
+                if (liftedId == passThruPointerId) {
+                    passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+                }
+                if (liftedId == activePointerId) {
+                    int replacementIdx = -1;
+                    for (int i = 0; i < event.getPointerCount(); i++) {
+                        if (i != idx) {
+                            replacementIdx = i;
+                            break;
+                        }
+                    }
+                    if (replacementIdx >= 0) {
+                        activePointerId = event.getPointerId(replacementIdx);
+                        if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
+                            passThruPointerId = activePointerId;
+                            passThruLastX = event.getX(replacementIdx);
+                            passThruLastY = event.getY(replacementIdx);
+                        }
+                    } else {
+                        activePointerId = MotionEvent.INVALID_POINTER_ID;
+                        if (!mProperties.isToggle && mIsPressed) {
+                            mIsPressed = false;
+                            applyBackgroundDrawable();
+                            sendKeyPresses(false);
+                        }
                     }
                 }
                 return true;
             }
 
             case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP:
             case MotionEvent.ACTION_CANCEL:
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
                 passThruPointerId = MotionEvent.INVALID_POINTER_ID;
                 if (!mProperties.isToggle && mIsPressed) {
                     mIsPressed = false;
@@ -358,6 +398,7 @@ public class ControlButton extends Button implements ControlInterface {
     }
 
     public void releaseIfPressed() {
+        activePointerId = MotionEvent.INVALID_POINTER_ID;
         passThruPointerId = MotionEvent.INVALID_POINTER_ID;
         if (mIsPressed || mIsToggled) {
             mIsPressed = false;

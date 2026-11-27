@@ -43,8 +43,17 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.2.0",
+        version = "v1.3.0",
         tag = "Latest",
+        items = listOf(
+            "Replaced overlay AlertDialogs with a native WindowManager Floating Settings Drawer so tapping the top Gear (⚙) menu never crashes or resets the HUD.",
+            "Added FLAG_SPLIT_TOUCH across every floating window and multi-pointer tracking on Shoot/Scope/Joystick/Aim Zone so holding fire or ADS never freezes camera aiming.",
+            "Added kernel /dev/uinput virtual USB Mouse & Keyboard driver (BTN_LEFT 0x110, BTN_RIGHT 0x111, REL_X/REL_Y, KEY_*) with SOURCE_MOUSE_RELATIVE fallback for GeForce NOW MB1/MB2 & 3D look."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.2.0",
+        tag = "Gyro & Crosshair",
         items = listOf(
             "Hardware Gyroscope aiming engine (Always On, ADS Only, Firing Only, X/Y sensitivity, axis inversion, anti-shake smoothing).",
             "Quick-Aim and Quick-Gyro floating toggles plus bindable Toggle Gyro HUD key.",

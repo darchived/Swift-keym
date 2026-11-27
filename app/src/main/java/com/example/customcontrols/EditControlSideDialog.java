@@ -1,6 +1,5 @@
 package com.example.customcontrols;
 
-import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -10,17 +9,12 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
-import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -28,6 +22,7 @@ import android.widget.Toast;
 import com.example.R;
 import com.example.customcontrols.colorselector.ColorSelector;
 import com.example.customcontrols.utils.ControlUtils;
+import com.example.customcontrols.utils.OverlayWindowHelper;
 import com.example.input.LwjglGlfwKeycode;
 
 import java.util.Locale;
@@ -41,7 +36,7 @@ public class EditControlSideDialog {
     private final ControlLayout parentLayout;
     private final ControlInterface target;
     private final boolean isOverlayWindow;
-    private final Dialog dialog;
+    private final OverlayWindowHelper windowHost;
 
     public EditControlSideDialog(Context context, ControlLayout parentLayout, ControlInterface target, boolean isOverlayWindow) {
         this.context = context;
@@ -49,18 +44,10 @@ public class EditControlSideDialog {
         this.target = target;
         this.isOverlayWindow = isOverlayWindow;
 
-        dialog = new Dialog(context, R.style.Theme_SwiftKeyM_OverlayDialog);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            if (isOverlayWindow) {
-                window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-            }
-            window.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        }
+        windowHost = new OverlayWindowHelper(context, isOverlayWindow);
+        windowHost.setOnDismissListener(parentLayout::notifyLayoutModified);
 
         buildContent();
-        dialog.setOnDismissListener(d -> parentLayout.notifyLayoutModified());
     }
 
     private void buildContent() {
@@ -88,7 +75,7 @@ public class EditControlSideDialog {
         doneBtn.setText(R.string.edit_ctrl_done);
         doneBtn.setTextColor(0xFFFFFFFF);
         doneBtn.setBackgroundColor(Color.TRANSPARENT);
-        doneBtn.setOnClickListener(v -> dialog.dismiss());
+        doneBtn.setOnClickListener(v -> windowHost.dismiss());
 
         header.addView(titleTv);
         header.addView(doneBtn);
@@ -229,25 +216,42 @@ public class EditControlSideDialog {
             ControlDrawerData drawerData = drawer.getDrawerData();
             addSectionLabel(body, context.getString(R.string.edit_ctrl_orientation));
 
-            Spinner orientSpinner = new Spinner(context);
             String[] orientations = new String[]{"Down", "Left", "Up", "Right", "Free"};
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_item, orientations);
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-            orientSpinner.setAdapter(adapter);
-            orientSpinner.setSelection(ControlUtils.clamp(drawerData.orientation, 0, 4));
-            orientSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-                @Override
-                public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                    if (view instanceof TextView) ((TextView) view).setTextColor(0xFFFFFFFF);
-                    drawerData.orientation = position;
+            LinearLayout orientRow = new LinearLayout(context);
+            orientRow.setOrientation(LinearLayout.HORIZONTAL);
+            Button[] orientChips = new Button[orientations.length];
+            int selIdx = ControlUtils.clamp(drawerData.orientation, 0, 4);
+            for (int i = 0; i < orientations.length; i++) {
+                final int pos = i;
+                Button chip = new Button(context);
+                chip.setText(orientations[i]);
+                chip.setAllCaps(false);
+                chip.setTextSize(10.5f);
+                chip.setTypeface(Typeface.DEFAULT_BOLD);
+                chip.setMinWidth(0);
+                chip.setMinHeight(0);
+                chip.setStateListAnimator(null);
+                chip.setPadding(4, 2, 4, 2);
+                LinearLayout.LayoutParams cLp = new LinearLayout.LayoutParams(
+                        0, (int) ControlUtils.dpToPx(context, 30f), 1f
+                );
+                if (i < orientations.length - 1) {
+                    cLp.setMarginEnd((int) ControlUtils.dpToPx(context, 3f));
+                }
+                chip.setLayoutParams(cLp);
+                styleOrientChip(chip, i == selIdx);
+                chip.setOnClickListener(v -> {
+                    for (int j = 0; j < orientChips.length; j++) {
+                        styleOrientChip(orientChips[j], j == pos);
+                    }
+                    drawerData.orientation = pos;
                     drawer.syncButtons();
                     parentLayout.notifyLayoutModified();
-                }
-
-                @Override
-                public void onNothingSelected(AdapterView<?> parent) {}
-            });
-            body.addView(orientSpinner);
+                });
+                orientChips[i] = chip;
+                orientRow.addView(chip);
+            }
+            body.addView(orientRow);
 
             Button addSubBtn = createFlatRowButton(context.getString(R.string.edit_ctrl_add_subbutton), 0xFFFFFFFF);
             addSubBtn.setOnClickListener(v -> {
@@ -403,7 +407,7 @@ public class EditControlSideDialog {
         deleteBtn.setBackgroundResource(R.drawable.bg_input_field);
         deleteBtn.setOnClickListener(v -> {
             target.removeButton();
-            dialog.dismiss();
+            windowHost.dismiss();
         });
 
         Button cloneBtn = new Button(context);
@@ -413,7 +417,7 @@ public class EditControlSideDialog {
         cloneBtn.setBackgroundResource(R.drawable.bg_input_field);
         cloneBtn.setOnClickListener(v -> {
             target.cloneButton();
-            dialog.dismiss();
+            windowHost.dismiss();
         });
 
         LinearLayout.LayoutParams fl1 = new LinearLayout.LayoutParams(0, (int) ControlUtils.dpToPx(context, 40f), 1f);
@@ -424,12 +428,9 @@ public class EditControlSideDialog {
         footer.addView(cloneBtn);
         outer.addView(footer);
 
-        dialog.setContentView(outer);
-        if (dialog.getWindow() != null) {
-            int maxW = (int) ControlUtils.dpToPx(context, 320f);
-            int maxH = (int) (ControlUtils.getScreenHeight(context) * 0.90f);
-            dialog.getWindow().setLayout(maxW, maxH);
-        }
+        int maxW = (int) ControlUtils.dpToPx(context, 320f);
+        int maxH = (int) (ControlUtils.getScreenHeight(context) * 0.90f);
+        windowHost.setContentView(outer, maxW, maxH, Gravity.END | Gravity.CENTER_VERTICAL, true);
     }
 
     private Button createSlotButton(ControlData data, int slotIdx) {
@@ -600,13 +601,26 @@ public class EditControlSideDialog {
         btn.setBackground(gd);
     }
 
+    private void styleOrientChip(Button chip, boolean active) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setCornerRadius(ControlUtils.dpToPx(context, 6f));
+        if (active) {
+            gd.setColor(0xFFFFFFFF);
+            gd.setStroke(1, 0xFFFFFFFF);
+            chip.setTextColor(0xFF1E1E1E);
+        } else {
+            gd.setColor(0xFF2C2C2C);
+            gd.setStroke(1, 0x44FFFFFF);
+            chip.setTextColor(0xFFD0D0D0);
+        }
+        chip.setBackground(gd);
+    }
+
     public void show() {
-        dialog.show();
+        windowHost.show();
     }
 
     public void dismiss() {
-        if (dialog.isShowing()) {
-            dialog.dismiss();
-        }
+        windowHost.dismiss();
     }
 }

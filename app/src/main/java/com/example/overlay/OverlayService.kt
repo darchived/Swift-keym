@@ -33,10 +33,8 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
-import com.example.customcontrols.CogwheelMenuDialog
 import com.example.customcontrols.ControlLayout
 import com.example.customcontrols.ControlLayoutManager
-import com.example.customcontrols.ExitConfirmDialog
 import com.example.customcontrols.utils.ControlUtils
 import com.example.input.GyroscopeController
 import com.example.input.InputBridge
@@ -76,6 +74,7 @@ class OverlayService : Service() {
         private const val BASE_WINDOW_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_SPLIT_TOUCH or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
 
@@ -105,6 +104,7 @@ class OverlayService : Service() {
     private var topBarParams: WindowManager.LayoutParams? = null
     private var gyroToggleBtn: ImageButton? = null
     private var undoPillBtn: ImageButton? = null
+    private var cogToggleBtn: ImageButton? = null
     private var redoPillBtn: ImageButton? = null
 
     // Dedicated Quick-Aim Floating Chip placed beside the Floating Eye Button
@@ -114,6 +114,9 @@ class OverlayService : Service() {
     // Persistent draggable Floating Eye Button (Show / Hide GUI)
     private var eyeButton: ImageButton? = null
     private var eyeParams: WindowManager.LayoutParams? = null
+
+    // Native WindowManager Floating Settings Drawer (no Dialog/AlertDialog)
+    private var settingsDrawer: FloatingSettingsDrawerView? = null
 
     // Visual-only (strictly FLAG_NOT_TOUCHABLE) Touch Ripple & Center Crosshair windows
     private var touchRippleView: TouchRippleOverlayView? = null
@@ -638,9 +641,10 @@ class OverlayService : Service() {
             setBackgroundColor(Color.TRANSPARENT)
             contentDescription = "Open Swift KeyM Cogwheel Menu"
             setPadding(4, 4, 4, 4)
-            setOnClickListener { openCogwheelMenu() }
+            setOnClickListener { toggleSettingsDrawer() }
             setOnTouchListener(dragListener)
         }
+        cogToggleBtn = cogBtn
 
         val redoBtn = ImageButton(this).apply {
             setImageResource(R.drawable.ic_redo)
@@ -878,92 +882,77 @@ class OverlayService : Service() {
         }
     }
 
-    private fun openCogwheelMenu() {
+    private fun toggleSettingsDrawer() {
         val hud = controlLayout ?: return
-        CogwheelMenuDialog(
-            this,
-            hud,
-            true,
-            object : CogwheelMenuDialog.HostActions {
-                override fun onToggleEditMode() = toggleEditMode()
+        try {
+            val drawer = settingsDrawer ?: FloatingSettingsDrawerView(
+                context = this,
+                windowManager = windowManager,
+                controlLayout = hud,
+                callbacks = object : FloatingSettingsDrawerView.Callbacks {
+                    override fun isAimEnabled(): Boolean = isAimEnabled
 
-                override fun onToggleHideHud() = toggleHudVisibility()
+                    override fun onSetAimEnabled(enabled: Boolean) {
+                        setAimEnabled(enabled)
+                    }
 
-                override fun onAdjustAimSensitivity(delta: Float) {
-                    val next = ControlUtils.clamp(hud.aimSensitivity + delta, 0.2f, 5.0f)
-                    hud.aimSensitivity = next
-                    ControlLayoutManager.setAimSensitivity(this@OverlayService, next)
+                    override fun onToggleEditMode() {
+                        toggleEditMode()
+                    }
+
+                    override fun onToggleHideHud() {
+                        toggleHudVisibility()
+                    }
+
+                    override fun onAimSensitivitySet(sensitivity: Float) {
+                        hud.aimSensitivity = sensitivity
+                        ControlLayoutManager.setAimSensitivity(this@OverlayService, sensitivity)
+                    }
+
+                    override fun onGyroSettingsChanged() {
+                        syncGyroSettingsFromPrefs()
+                    }
+
+                    override fun onCrosshairSettingsChanged() {
+                        syncCrosshairFromPrefs()
+                    }
+
+                    override fun onHapticToggled(enabled: Boolean) {
+                        hud.isHapticEnabled = enabled
+                    }
+
+                    override fun onPositionsLockToggled(locked: Boolean) {
+                        hud.isPositionsLocked = locked
+                    }
+
+                    override fun onExportControlMap() {
+                        val activeName = ControlLayoutManager.getActiveLayoutName(this@OverlayService)
+                        val json = hud.layout.toJson()
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText(activeName, json))
+                        ControlLayoutManager.saveActiveLayout(this@OverlayService, hud.layout)
+                        hud.markSaved()
+                        Toast.makeText(
+                            this@OverlayService,
+                            "Saved to controlmap/$activeName & copied JSON",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+
+                    override fun onStopServiceConfirmed() {
+                        stopSelf()
+                    }
+
+                    override fun onDrawerVisibilityChanged(visible: Boolean) {
+                        cogToggleBtn?.setColorFilter(if (visible) 0xFFE0E0E0.toInt() else 0xFFFFFFFF.toInt())
+                    }
                 }
+            ).also { settingsDrawer = it }
 
-                override fun onAimSensitivitySet(sensitivity: Float) {
-                    hud.aimSensitivity = sensitivity
-                    ControlLayoutManager.setAimSensitivity(this@OverlayService, sensitivity)
-                }
-
-                override fun isAimEnabled(): Boolean = isAimEnabled
-
-                override fun onSetAimEnabled(enabled: Boolean) {
-                    setAimEnabled(enabled)
-                }
-
-                override fun onGyroSettingsChanged() {
-                    syncGyroSettingsFromPrefs()
-                }
-
-                override fun onCrosshairSettingsChanged() {
-                    syncCrosshairFromPrefs()
-                }
-
-                override fun onHapticToggled(enabled: Boolean) {
-                    hud.isHapticEnabled = enabled
-                }
-
-                override fun onPositionsLockToggled(locked: Boolean) {
-                    hud.isPositionsLocked = locked
-                }
-
-                override fun onExportControlMap() {
-                    val activeName = ControlLayoutManager.getActiveLayoutName(this@OverlayService)
-                    val json = hud.layout.toJson()
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText(activeName, json))
-                    ControlLayoutManager.saveActiveLayout(this@OverlayService, hud.layout)
-                    hud.markSaved()
-                    Toast.makeText(
-                        this@OverlayService,
-                        "Saved to controlmap/$activeName & copied JSON",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-
-                override fun onStopServiceConfirmed() {
-                    stopSelf()
-                }
-
-                override fun onExitHost() {
-                    ExitConfirmDialog.show(
-                        this@OverlayService,
-                        hud.hasUnsavedChanges(),
-                        true,
-                        object : ExitConfirmDialog.Callback {
-                            override fun onSaveAndExit() {
-                                ControlLayoutManager.saveActiveLayout(this@OverlayService, hud.layout)
-                                hud.markSaved()
-                                stopSelf()
-                            }
-
-                            override fun onContinueExit() {
-                                stopSelf()
-                            }
-                        }
-                    )
-                }
-
-                override fun isOverlayHost(): Boolean = true
-
-                override fun isHudHidden(): Boolean = isHudHidden
-            }
-        ).show()
+            drawer.toggle()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Menu error: ${t.message ?: "failed"}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun toggleEditMode() {
@@ -996,6 +985,7 @@ class OverlayService : Service() {
         isHudHidden = !isHudHidden
 
         if (isHudHidden) {
+            settingsDrawer?.dismiss()
             hud.isModifiable = false
             setAimEnabled(false)
             hud.releaseAllActiveTouches()
@@ -1065,6 +1055,9 @@ class OverlayService : Service() {
         controlDesiredSizes.clear()
         controlLogicalVisible.clear()
 
+        settingsDrawer?.dismiss()
+        settingsDrawer = null
+
         listOf(aimZoneView, crosshairView, topBarRoot, quickAimButton, eyeButton, touchRippleView).forEach { view ->
             if (view != null && view.isAttachedToWindow) {
                 try {
@@ -1077,6 +1070,7 @@ class OverlayService : Service() {
         aimZoneView = null
         crosshairView = null
         topBarRoot = null
+        cogToggleBtn = null
         quickAimButton = null
         eyeButton = null
         touchRippleView = null
@@ -1117,7 +1111,9 @@ class OverlayService : Service() {
                     val loc = IntArray(2)
                     getLocationOnScreen(loc)
                     spawnTouchRipple(loc[0] + event.getX(idx), loc[1] + event.getY(idx))
-                    if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
+                    if (activePointerId == MotionEvent.INVALID_POINTER_ID ||
+                        event.findPointerIndex(activePointerId) < 0
+                    ) {
                         activePointerId = event.getPointerId(idx)
                         lastX = event.getX(idx)
                         lastY = event.getY(idx)
@@ -1126,32 +1122,55 @@ class OverlayService : Service() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
-                        val idx = event.findPointerIndex(activePointerId)
-                        if (idx >= 0) {
-                            val currX = event.getX(idx)
-                            val currY = event.getY(idx)
-                            val dx = currX - lastX
-                            val dy = currY - lastY
-                            lastX = currX
-                            lastY = currY
-                            if (dx != 0f || dy != 0f) {
-                                InputBridge.sendMouseMove(dx * sensitivity, dy * sensitivity)
-                            }
+                    var idx = if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                        event.findPointerIndex(activePointerId)
+                    } else {
+                        -1
+                    }
+                    if (idx < 0 && event.pointerCount > 0) {
+                        activePointerId = event.getPointerId(0)
+                        lastX = event.getX(0)
+                        lastY = event.getY(0)
+                        return true
+                    }
+                    if (idx >= 0) {
+                        val currX = event.getX(idx)
+                        val currY = event.getY(idx)
+                        val dx = currX - lastX
+                        val dy = currY - lastY
+                        lastX = currX
+                        lastY = currY
+                        val maxStep = screenWidthPx * 0.45f
+                        if ((dx != 0f || dy != 0f) && hypot(dx.toDouble(), dy.toDouble()) < maxStep) {
+                            InputBridge.sendMouseMove(dx * sensitivity, dy * sensitivity)
                         }
                     }
                     return true
                 }
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                MotionEvent.ACTION_POINTER_UP -> {
                     val idx = event.actionIndex
-                    if (event.getPointerId(idx) == activePointerId) {
-                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                    val liftedId = event.getPointerId(idx)
+                    if (liftedId == activePointerId) {
+                        var replacementIdx = -1
+                        for (i in 0 until event.pointerCount) {
+                            if (i != idx) {
+                                replacementIdx = i
+                                break
+                            }
+                        }
+                        if (replacementIdx >= 0) {
+                            activePointerId = event.getPointerId(replacementIdx)
+                            lastX = event.getX(replacementIdx)
+                            lastY = event.getY(replacementIdx)
+                        } else {
+                            activePointerId = MotionEvent.INVALID_POINTER_ID
+                        }
                     }
                     return true
                 }
 
-                MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
                     return true
                 }

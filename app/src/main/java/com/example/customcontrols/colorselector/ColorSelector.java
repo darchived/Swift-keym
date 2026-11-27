@@ -1,6 +1,5 @@
 package com.example.customcontrols.colorselector;
 
-import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -8,7 +7,6 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -18,6 +16,7 @@ import android.widget.TextView;
 
 import com.example.R;
 import com.example.customcontrols.utils.ControlUtils;
+import com.example.customcontrols.utils.OverlayWindowHelper;
 
 /**
  * Overlay-safe ARGB ColorSelector dialog styled in Swift KeyM grey and white.
@@ -33,18 +32,13 @@ public class ColorSelector {
             0xCCFF5252, 0xCCFFB300, 0xCCE0E0E0, 0x66000000
     };
 
-    private final Dialog dialog;
+    private final OverlayWindowHelper windowHost;
     private int currentColor;
     private boolean updatingFromCode = false;
 
     public ColorSelector(Context context, int initialColor, boolean isOverlayWindow, OnColorSelectedListener listener) {
         this.currentColor = initialColor;
-        dialog = new Dialog(context, R.style.Theme_SwiftKeyM_OverlayDialog);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
-        if (isOverlayWindow && dialog.getWindow() != null) {
-            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        }
+        this.windowHost = new OverlayWindowHelper(context, isOverlayWindow);
 
         int pad = (int) ControlUtils.dpToPx(context, 16f);
         LinearLayout root = new LinearLayout(context);
@@ -197,7 +191,7 @@ public class ColorSelector {
         cancelBtn.setText(R.string.color_selector_cancel);
         cancelBtn.setTextColor(0xFFA8A8A8);
         cancelBtn.setBackgroundColor(Color.TRANSPARENT);
-        cancelBtn.setOnClickListener(v -> dialog.dismiss());
+        cancelBtn.setOnClickListener(v -> windowHost.dismiss());
 
         Button applyBtn = new Button(context);
         applyBtn.setText(R.string.color_selector_apply);
@@ -205,7 +199,7 @@ public class ColorSelector {
         applyBtn.setBackgroundColor(Color.TRANSPARENT);
         applyBtn.setOnClickListener(v -> {
             if (listener != null) listener.onColorSelected(currentColor);
-            dialog.dismiss();
+            windowHost.dismiss();
         });
 
         btnRow.addView(cancelBtn);
@@ -213,13 +207,13 @@ public class ColorSelector {
         root.addView(btnRow);
 
         refreshUi.run();
-        dialog.setContentView(root);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setLayout(
-                    (int) ControlUtils.dpToPx(context, 310f),
-                    WindowManager.LayoutParams.WRAP_CONTENT
-            );
-        }
+        windowHost.setContentView(
+                root,
+                (int) ControlUtils.dpToPx(context, 310f),
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+                true
+        );
     }
 
     private SeekBar createChannelRow(Context context, LinearLayout parent, String label) {
@@ -257,6 +251,6 @@ public class ColorSelector {
     }
 
     public void show() {
-        dialog.show();
+        windowHost.show();
     }
 }

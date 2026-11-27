@@ -345,4 +345,80 @@ class ExampleRobolectricTest {
         com.example.input.InputBridge.setSpecialActionListener(null)
         com.example.input.InputBridge.setMenuKeyListener(null)
     }
+
+    @Test
+    fun `uinput bridge maps mouse buttons and keyboard events to linux input codes`() {
+        assertEquals(0x110, com.example.input.UinputBridge.toLinuxMouseButton(MotionEvent.BUTTON_PRIMARY))
+        assertEquals(0x111, com.example.input.UinputBridge.toLinuxMouseButton(MotionEvent.BUTTON_SECONDARY))
+        assertEquals(0x112, com.example.input.UinputBridge.toLinuxMouseButton(MotionEvent.BUTTON_TERTIARY))
+        assertEquals(0, com.example.input.UinputBridge.toLinuxMouseButton(0))
+
+        assertEquals(17, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_W))
+        assertEquals(30, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_A))
+        assertEquals(31, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_S))
+        assertEquals(32, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_D))
+        assertEquals(57, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_SPACE))
+        assertEquals(1, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_ESCAPE))
+        assertEquals(42, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_SHIFT_LEFT))
+        assertEquals(29, com.example.input.UinputBridge.toLinuxKeyCode(KeyEvent.KEYCODE_CTRL_LEFT))
+    }
+
+    @Test
+    fun `control button multi-pointer touch holds primary press until owning pointer releases`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val layout = ControlLayout(context)
+        layout.layout(0, 0, 1920, 1080)
+        val shootData = ControlData(
+            "Shoot",
+            intArrayOf(LwjglGlfwKeycode.SPECIALBTN_MOUSEPRI, 0, 0, 0),
+            "0.8 * \${screen_width}",
+            "0.5 * \${screen_height}",
+            80f,
+            80f
+        )
+        val btn = com.example.customcontrols.ControlButton(context, layout, shootData)
+        com.example.input.InputBridge.resetAll()
+        assertFalse(com.example.input.InputBridge.isPrimaryMouseDown)
+
+        // Pointer 0 presses button
+        val p0Props = MotionEvent.PointerProperties().apply { id = 0 }
+        val p0Coords = MotionEvent.PointerCoords().apply { x = 40f; y = 40f }
+        val down0 = MotionEvent.obtain(
+            100L, 100L, MotionEvent.ACTION_DOWN, 1,
+            arrayOf(p0Props), arrayOf(p0Coords), 0, 0, 1f, 1f, 0, 0, 0, 0
+        )
+        btn.onTouchEvent(down0)
+        down0.recycle()
+        assertTrue(com.example.input.InputBridge.isPrimaryMouseDown)
+
+        // Pointer 1 also touches and then lifts via ACTION_POINTER_UP -> Shoot must stay pressed!
+        val p1Props = MotionEvent.PointerProperties().apply { id = 1 }
+        val p1Coords = MotionEvent.PointerCoords().apply { x = 50f; y = 50f }
+        val down1 = MotionEvent.obtain(
+            100L, 110L,
+            MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+            2, arrayOf(p0Props, p1Props), arrayOf(p0Coords, p1Coords), 0, 0, 1f, 1f, 0, 0, 0, 0
+        )
+        btn.onTouchEvent(down1)
+        down1.recycle()
+        assertTrue(com.example.input.InputBridge.isPrimaryMouseDown)
+
+        val up1 = MotionEvent.obtain(
+            100L, 120L,
+            MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+            2, arrayOf(p0Props, p1Props), arrayOf(p0Coords, p1Coords), 0, 0, 1f, 1f, 0, 0, 0, 0
+        )
+        btn.onTouchEvent(up1)
+        up1.recycle()
+        assertTrue(com.example.input.InputBridge.isPrimaryMouseDown)
+
+        // Pointer 0 lifts via ACTION_UP -> now Shoot releases cleanly
+        val up0 = MotionEvent.obtain(
+            100L, 130L, MotionEvent.ACTION_UP, 1,
+            arrayOf(p0Props), arrayOf(p0Coords), 0, 0, 1f, 1f, 0, 0, 0, 0
+        )
+        btn.onTouchEvent(up0)
+        up0.recycle()
+        assertFalse(com.example.input.InputBridge.isPrimaryMouseDown)
+    }
 }

@@ -12,7 +12,6 @@ import android.view.MotionEvent;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ShizukuInputService extends IInputService.Stub {
@@ -23,6 +22,11 @@ public class ShizukuInputService extends IInputService.Stub {
     private Method injectInputEventMethod;
     private Method setActionButtonMethod;
 
+    // Primary kernel-level virtual USB mouse & keyboard (/dev/uinput)
+    private volatile int uinputFd = -1;
+    private volatile float uinputRelAccX = 0f;
+    private volatile float uinputRelAccY = 0f;
+
     private final ConcurrentHashMap<Integer, Long> keyDownTimes = new ConcurrentHashMap<>();
     private volatile int activeMetaState = 0;
     private volatile int mouseButtonState = 0;
@@ -32,6 +36,18 @@ public class ShizukuInputService extends IInputService.Stub {
 
     public ShizukuInputService() {
         initReflection();
+        initUinput();
+    }
+
+    private void initUinput() {
+        int fd = UinputBridge.openDevice();
+        if (fd >= 0) {
+            uinputFd = fd;
+            Log.i(TAG, "Registered kernel /dev/uinput virtual USB mouse & keyboard (fd=" + fd + ")");
+        } else {
+            uinputFd = -1;
+            Log.w(TAG, "/dev/uinput unavailable (code=" + fd + "), using InputManager fallback");
+        }
     }
 
     private void initReflection() {
@@ -88,12 +104,13 @@ public class ShizukuInputService extends IInputService.Stub {
     @Override
     public synchronized void injectKey(int keyCode, int action, int metaState) {
         if (keyCode <= 0) return;
+        boolean down = action == KeyEvent.ACTION_DOWN;
         long now = SystemClock.uptimeMillis();
-        updateModifierState(keyCode, action == KeyEvent.ACTION_DOWN);
+        updateModifierState(keyCode, down);
         int combinedMeta = activeMetaState | metaState;
 
         long downTime;
-        if (action == KeyEvent.ACTION_DOWN) {
+        if (down) {
             Long existing = keyDownTimes.get(keyCode);
             downTime = existing != null ? existing : now;
             keyDownTimes.put(keyCode, downTime);
@@ -102,6 +119,14 @@ public class ShizukuInputService extends IInputService.Stub {
             downTime = existing != null ? existing : now;
         }
 
+        // Primary backend: Linux /dev/uinput EV_KEY + EV_SYN
+        if (uinputFd >= 0 && UinputBridge.toLinuxKeyCode(keyCode) > 0) {
+            if (UinputBridge.injectKey(uinputFd, keyCode, down)) {
+                return;
+            }
+        }
+
+        // Fallback: InputManager.injectInputEvent
         KeyEvent keyEvent = new KeyEvent(
                 downTime,
                 now,
@@ -158,24 +183,44 @@ public class ShizukuInputService extends IInputService.Stub {
                 mouseDownTime = now;
             }
             mouseButtonState = prevState | button;
-
-            if (prevState == 0) {
-                MotionEvent downEvent = obtainMouseEvent(mouseDownTime, now, MotionEvent.ACTION_DOWN, mouseButtonState, 0f, 0f, 0f, 0f);
-                injectAndRecycle(downEvent);
-            }
-            MotionEvent pressEvent = obtainMouseEvent(mouseDownTime, now, MotionEvent.ACTION_BUTTON_PRESS, mouseButtonState, 0f, 0f, 0f, 0f);
-            applyActionButton(pressEvent, button);
-            injectAndRecycle(pressEvent);
         } else {
             if ((prevState & button) == 0) return;
             mouseButtonState = prevState & ~button;
+        }
 
-            MotionEvent releaseEvent = obtainMouseEvent(mouseDownTime, now, MotionEvent.ACTION_BUTTON_RELEASE, mouseButtonState, 0f, 0f, 0f, 0f);
+        // Primary backend: /dev/uinput BTN_LEFT (0x110), BTN_RIGHT (0x111), BTN_MIDDLE (0x112) + EV_SYN
+        if (uinputFd >= 0 && UinputBridge.injectMouseButton(uinputFd, button, down)) {
+            return;
+        }
+
+        // Fallback backend: InputManager.injectInputEvent with SOURCE_MOUSE + TOOL_TYPE_MOUSE
+        if (down) {
+            if (prevState == 0) {
+                MotionEvent downEvent = obtainMouseEvent(
+                        mouseDownTime, now, MotionEvent.ACTION_DOWN, mouseButtonState,
+                        0f, 0f, 0f, 0f, InputDevice.SOURCE_MOUSE
+                );
+                injectAndRecycle(downEvent);
+            }
+            MotionEvent pressEvent = obtainMouseEvent(
+                    mouseDownTime, now, MotionEvent.ACTION_BUTTON_PRESS, mouseButtonState,
+                    0f, 0f, 0f, 0f, InputDevice.SOURCE_MOUSE
+            );
+            applyActionButton(pressEvent, button);
+            injectAndRecycle(pressEvent);
+        } else {
+            MotionEvent releaseEvent = obtainMouseEvent(
+                    mouseDownTime, now, MotionEvent.ACTION_BUTTON_RELEASE, mouseButtonState,
+                    0f, 0f, 0f, 0f, InputDevice.SOURCE_MOUSE
+            );
             applyActionButton(releaseEvent, button);
             injectAndRecycle(releaseEvent);
 
             if (mouseButtonState == 0) {
-                MotionEvent upEvent = obtainMouseEvent(mouseDownTime, now, MotionEvent.ACTION_UP, 0, 0f, 0f, 0f, 0f);
+                MotionEvent upEvent = obtainMouseEvent(
+                        mouseDownTime, now, MotionEvent.ACTION_UP, 0,
+                        0f, 0f, 0f, 0f, InputDevice.SOURCE_MOUSE
+                );
                 injectAndRecycle(upEvent);
             }
         }
@@ -184,27 +229,54 @@ public class ShizukuInputService extends IInputService.Stub {
     @Override
     public synchronized void injectMouseMove(float dx, float dy) {
         if (dx == 0f && dy == 0f) return;
-        long now = SystemClock.uptimeMillis();
 
+        // Primary backend: /dev/uinput REL_X (0x00) / REL_Y (0x01) + EV_SYN
+        if (uinputFd >= 0) {
+            uinputRelAccX += dx;
+            uinputRelAccY += dy;
+            int ix = (int) uinputRelAccX;
+            int iy = (int) uinputRelAccY;
+            uinputRelAccX -= ix;
+            uinputRelAccY -= iy;
+            if (ix == 0 && iy == 0) return;
+            if (UinputBridge.injectMouseMove(uinputFd, ix, iy)) {
+                return;
+            }
+        }
+
+        // Fallback backend: InputManager.injectInputEvent with InputDevice.SOURCE_MOUSE_RELATIVE
+        long now = SystemClock.uptimeMillis();
         cursorX = Math.max(1f, Math.min(1919f, cursorX + dx));
         cursorY = Math.max(1f, Math.min(1079f, cursorY + dy));
 
-        int action = (mouseButtonState != 0) ? MotionEvent.ACTION_MOVE : MotionEvent.ACTION_HOVER_MOVE;
         long downTime = (mouseButtonState != 0) ? mouseDownTime : now;
-
-        MotionEvent moveEvent = obtainMouseEvent(downTime, now, action, mouseButtonState, dx, dy, 0f, 0f);
+        MotionEvent moveEvent = obtainRelativeMouseEvent(downTime, now, mouseButtonState, dx, dy);
         injectAndRecycle(moveEvent);
     }
 
     @Override
     public synchronized void injectMouseScroll(float vScroll, float hScroll) {
+        if (uinputFd >= 0) {
+            int iv = Math.round(vScroll);
+            int ih = Math.round(hScroll);
+            if ((iv != 0 || ih != 0) && UinputBridge.injectMouseScroll(uinputFd, iv, ih)) {
+                return;
+            }
+        }
+
         long now = SystemClock.uptimeMillis();
-        MotionEvent scrollEvent = obtainMouseEvent(now, now, MotionEvent.ACTION_SCROLL, mouseButtonState, 0f, 0f, vScroll, hScroll);
+        MotionEvent scrollEvent = obtainMouseEvent(
+                now, now, MotionEvent.ACTION_SCROLL, mouseButtonState,
+                0f, 0f, vScroll, hScroll, InputDevice.SOURCE_MOUSE
+        );
         injectAndRecycle(scrollEvent);
     }
 
     @Override
     public synchronized void resetAllInputs() {
+        uinputRelAccX = 0f;
+        uinputRelAccY = 0f;
+
         List<Integer> heldKeys = new ArrayList<>(keyDownTimes.keySet());
         for (Integer keyCode : heldKeys) {
             injectKey(keyCode, KeyEvent.ACTION_UP, 0);
@@ -313,7 +385,50 @@ public class ShizukuInputService extends IInputService.Stub {
             resetAllInputs();
         } catch (Throwable ignored) {
         }
+        if (uinputFd >= 0) {
+            UinputBridge.closeDevice(uinputFd);
+            uinputFd = -1;
+        }
         System.exit(0);
+    }
+
+    private MotionEvent obtainRelativeMouseEvent(
+            long downTime,
+            long eventTime,
+            int buttonState,
+            float relX,
+            float relY
+    ) {
+        MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[1];
+        props[0] = new MotionEvent.PointerProperties();
+        props[0].id = 0;
+        props[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
+
+        MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[1];
+        coords[0] = new MotionEvent.PointerCoords();
+        coords[0].x = relX;
+        coords[0].y = relY;
+        coords[0].pressure = (buttonState != 0) ? 1.0f : 0.0f;
+        coords[0].size = 1.0f;
+        coords[0].setAxisValue(MotionEvent.AXIS_RELATIVE_X, relX);
+        coords[0].setAxisValue(MotionEvent.AXIS_RELATIVE_Y, relY);
+
+        return MotionEvent.obtain(
+                downTime,
+                eventTime,
+                MotionEvent.ACTION_MOVE,
+                1,
+                props,
+                coords,
+                activeMetaState,
+                buttonState,
+                1.0f,
+                1.0f,
+                0,
+                0,
+                InputDevice.SOURCE_MOUSE_RELATIVE,
+                0
+        );
     }
 
     private MotionEvent obtainMouseEvent(
@@ -324,7 +439,8 @@ public class ShizukuInputService extends IInputService.Stub {
             float relX,
             float relY,
             float vScroll,
-            float hScroll
+            float hScroll,
+            int source
     ) {
         MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[1];
         props[0] = new MotionEvent.PointerProperties();
@@ -359,7 +475,7 @@ public class ShizukuInputService extends IInputService.Stub {
                 1.0f,
                 0,
                 0,
-                InputDevice.SOURCE_MOUSE,
+                source,
                 0
         );
     }

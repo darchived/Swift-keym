@@ -37,6 +37,13 @@ jobs:
           sudo mkdir -p "$SDK_DIR/licenses" || mkdir -p "$SDK_DIR/licenses"
           printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" | (sudo tee "$SDK_DIR/licenses/android-sdk-license" >/dev/null || tee "$SDK_DIR/licenses/android-sdk-license" >/dev/null)
           (yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1) || true
+          "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Restore Persistent Keystore Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.swiftkeym
+          key: swiftkeym-release-keystore-v1
 
       - name: Prepare Release Keystore (Consistent Package Signature)
         env:
@@ -44,12 +51,17 @@ jobs:
           SECRET_STORE_PW: ${{ secrets.STORE_PASSWORD }}
           SECRET_KEY_PW: ${{ secrets.KEY_PASSWORD }}
         run: |
-          KEYSTORE_FILE="/tmp/swiftkeym.jks"
-          rm -f "$KEYSTORE_FILE"
-          if [ -n "$SECRET_KEYSTORE_B64" ] && echo "$SECRET_KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE" 2>/dev/null && [ -s "$KEYSTORE_FILE" ]; then
+          mkdir -p "$HOME/.swiftkeym"
+          KEYSTORE_FILE="$HOME/.swiftkeym/swiftkeym.jks"
+          if [ -n "$SECRET_KEYSTORE_B64" ] && echo "$SECRET_KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE.tmp" 2>/dev/null && [ -s "$KEYSTORE_FILE.tmp" ]; then
+            mv "$KEYSTORE_FILE.tmp" "$KEYSTORE_FILE"
             STORE_PW="$SECRET_STORE_PW"
             KEY_PW="$SECRET_KEY_PW"
             echo "Loaded persistent release keystore from repository secrets."
+          elif [ -s "$KEYSTORE_FILE" ]; then
+            STORE_PW="SwiftKeyM_Release_2026"
+            KEY_PW="SwiftKeyM_Release_2026"
+            echo "Reusing cached persistent release keystore."
           else
             STORE_PW="SwiftKeyM_Release_2026"
             KEY_PW="SwiftKeyM_Release_2026"
@@ -62,7 +74,7 @@ jobs:
               -keysize 2048 \
               -validity 10000 \
               -dname "CN=Team StarDevs,OU=Swift KeyM,O=StarDevs,C=US"
-            echo "Generated non-debug RSA-2048 release keystore (set KEYSTORE_BASE64 secret for cross-run updates)."
+            echo "Generated persistent RSA-2048 release keystore (cached for future updates)."
           fi
           echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> "$GITHUB_ENV"
           echo "STORE_PASSWORD=$STORE_PW" >> "$GITHUB_ENV"
@@ -99,7 +111,7 @@ jobs:
           TAG="v${{ steps.version.outputs.version_name }}"
           APK_PATH="dist/Swift-KeyM-v${{ steps.version.outputs.version_name }}.apk"
           ZIP_PATH="dist/Swift-KeyM-v${{ steps.version.outputs.version_name }}-source.zip"
-          NOTES="Swift KeyM ${TAG} (com.stardevs.swiftkeym signed Release APK + source archive). Features CODM-style Hardware Gyroscope engine, pass-through center Crosshair reticle, 4-slot multi-action macros, tactile haptic feedback, quick-aim floating chip, and zero screen-freeze individual button windows."
+          NOTES="Swift KeyM ${TAG} (com.stardevs.swiftkeym signed Release APK + source archive). Fixes Gear menu crash via native WindowManager Floating Settings Drawer, fixes Shoot/Scope + Aim multi-touch freeze (FLAG_SPLIT_TOUCH), and adds /dev/uinput virtual USB Mouse & Keyboard driver with SOURCE_MOUSE_RELATIVE fallback for GeForce NOW MB1/MB2 & 3D aiming."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK_PATH" "$ZIP_PATH" --clobber
           else

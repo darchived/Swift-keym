@@ -1,12 +1,10 @@
 package com.example.customcontrols;
 
-import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
-import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -14,6 +12,7 @@ import android.widget.TextView;
 
 import com.example.R;
 import com.example.customcontrols.utils.ControlUtils;
+import com.example.customcontrols.utils.OverlayWindowHelper;
 
 /**
  * Exit confirmation dialog matching MojoLauncher's "Leaving?" prompt when clean,
@@ -34,12 +33,7 @@ public final class ExitConfirmDialog {
             boolean isOverlayWindow,
             Callback callback
     ) {
-        Dialog dialog = new Dialog(context, R.style.Theme_SwiftKeyM_OverlayDialog);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        Window window = dialog.getWindow();
-        if (window != null && isOverlayWindow) {
-            window.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        }
+        OverlayWindowHelper windowHost = new OverlayWindowHelper(context, isOverlayWindow);
 
         int pad = (int) ControlUtils.dpToPx(context, 18f);
         LinearLayout root = new LinearLayout(context);
@@ -73,7 +67,7 @@ public final class ExitConfirmDialog {
 
         if (hasUnsavedChanges) {
             Button cancelBtn = createActionBtn(context, context.getString(R.string.exit_cancel), Color.TRANSPARENT, 0xFFA8A8A8, false);
-            cancelBtn.setOnClickListener(v -> dialog.dismiss());
+            cancelBtn.setOnClickListener(v -> windowHost.dismiss());
 
             Button continueBtn = createActionBtn(context, context.getString(R.string.exit_continue), 0xFF3A3A3A, 0xFFFFFFFF, true);
             LinearLayout.LayoutParams contLp = new LinearLayout.LayoutParams(
@@ -83,7 +77,7 @@ public final class ExitConfirmDialog {
             contLp.setMarginStart((int) ControlUtils.dpToPx(context, 8f));
             continueBtn.setLayoutParams(contLp);
             continueBtn.setOnClickListener(v -> {
-                dialog.dismiss();
+                windowHost.dismiss();
                 if (callback != null) callback.onContinueExit();
             });
 
@@ -95,7 +89,7 @@ public final class ExitConfirmDialog {
             saveLp.setMarginStart((int) ControlUtils.dpToPx(context, 8f));
             saveExitBtn.setLayoutParams(saveLp);
             saveExitBtn.setOnClickListener(v -> {
-                dialog.dismiss();
+                windowHost.dismiss();
                 if (callback != null) callback.onSaveAndExit();
             });
 
@@ -104,7 +98,7 @@ public final class ExitConfirmDialog {
             btnRow.addView(saveExitBtn);
         } else {
             Button noBtn = createActionBtn(context, context.getString(R.string.exit_no), Color.TRANSPARENT, 0xFFA8A8A8, false);
-            noBtn.setOnClickListener(v -> dialog.dismiss());
+            noBtn.setOnClickListener(v -> windowHost.dismiss());
 
             Button yesBtn = createActionBtn(context, context.getString(R.string.exit_yes), 0xFFFFFFFF, 0xFF1E1E1E, true);
             LinearLayout.LayoutParams yesLp = new LinearLayout.LayoutParams(
@@ -114,7 +108,7 @@ public final class ExitConfirmDialog {
             yesLp.setMarginStart((int) ControlUtils.dpToPx(context, 10f));
             yesBtn.setLayoutParams(yesLp);
             yesBtn.setOnClickListener(v -> {
-                dialog.dismiss();
+                windowHost.dismiss();
                 if (callback != null) callback.onContinueExit();
             });
 
@@ -123,17 +117,18 @@ public final class ExitConfirmDialog {
         }
 
         root.addView(btnRow);
-        dialog.setContentView(root);
-
-        if (window != null) {
-            int width = hasUnsavedChanges
-                    ? (int) ControlUtils.dpToPx(context, 420f)
-                    : (int) ControlUtils.dpToPx(context, 340f);
-            int maxAllowed = (int) (ControlUtils.getScreenWidth(context) * 0.92f);
-            window.setLayout(Math.min(width, maxAllowed), WindowManager.LayoutParams.WRAP_CONTENT);
-        }
-
-        dialog.show();
+        int width = hasUnsavedChanges
+                ? (int) ControlUtils.dpToPx(context, 420f)
+                : (int) ControlUtils.dpToPx(context, 340f);
+        int maxAllowed = (int) (ControlUtils.getScreenWidth(context) * 0.92f);
+        windowHost.setContentView(
+                root,
+                Math.min(width, maxAllowed),
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+                false
+        );
+        windowHost.show();
     }
 
     private static Button createActionBtn(

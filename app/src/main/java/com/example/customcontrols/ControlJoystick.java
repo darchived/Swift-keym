@@ -204,6 +204,8 @@ public class ControlJoystick extends View implements ControlInterface {
         return true;
     }
 
+    private int activePointerId = MotionEvent.INVALID_POINTER_ID;
+
     private boolean handlePlayTouch(MotionEvent event) {
         float radius = Math.min(getWidth(), getHeight()) * 0.38f;
         if (radius <= 1f) radius = 60f;
@@ -215,48 +217,89 @@ public class ControlJoystick extends View implements ControlInterface {
                 int[] loc = new int[2];
                 getLocationOnScreen(loc);
                 mParentLayout.notifyTouchFeedback(loc[0] + event.getX(idx), loc[1] + event.getY(idx));
-                isTracking = true;
-                if (sprintLocked) {
-                    sprintLocked = false;
-                }
-                if (mProperties.absolute) {
-                    originX = getWidth() / 2f;
-                    originY = getHeight() / 2f;
-                } else {
-                    originX = ControlUtils.clamp(event.getX(), radius * 0.5f, getWidth() - radius * 0.5f);
-                    originY = ControlUtils.clamp(event.getY(), radius * 0.5f, getHeight() - radius * 0.5f);
-                }
-                updateStickPosition(event.getX(), event.getY(), radius);
-                invalidate();
-                return true;
-            }
-
-            case MotionEvent.ACTION_MOVE:
-                if (isTracking) {
-                    updateStickPosition(event.getX(), event.getY(), radius);
+                if (activePointerId == MotionEvent.INVALID_POINTER_ID
+                        || event.findPointerIndex(activePointerId) < 0) {
+                    activePointerId = event.getPointerId(idx);
+                    isTracking = true;
+                    if (sprintLocked) {
+                        sprintLocked = false;
+                    }
+                    float px = event.getX(idx);
+                    float py = event.getY(idx);
+                    if (mProperties.absolute) {
+                        originX = getWidth() / 2f;
+                        originY = getHeight() / 2f;
+                    } else {
+                        originX = ControlUtils.clamp(px, radius * 0.5f, getWidth() - radius * 0.5f);
+                        originY = ControlUtils.clamp(py, radius * 0.5f, getHeight() - radius * 0.5f);
+                    }
+                    updateStickPosition(px, py, radius);
                     invalidate();
                 }
                 return true;
+            }
+
+            case MotionEvent.ACTION_MOVE: {
+                if (isTracking && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    int idx = event.findPointerIndex(activePointerId);
+                    if (idx >= 0) {
+                        updateStickPosition(event.getX(idx), event.getY(idx), radius);
+                        invalidate();
+                    }
+                }
+                return true;
+            }
+
+            case MotionEvent.ACTION_POINTER_UP: {
+                int idx = event.getActionIndex();
+                int liftedId = event.getPointerId(idx);
+                if (liftedId == activePointerId) {
+                    float releaseY = event.getY(idx);
+                    int replacementIdx = -1;
+                    for (int i = 0; i < event.getPointerCount(); i++) {
+                        if (i != idx) {
+                            replacementIdx = i;
+                            break;
+                        }
+                    }
+                    if (replacementIdx >= 0) {
+                        activePointerId = event.getPointerId(replacementIdx);
+                        updateStickPosition(event.getX(replacementIdx), event.getY(replacementIdx), radius);
+                    } else {
+                        activePointerId = MotionEvent.INVALID_POINTER_ID;
+                        finishJoystickTracking(releaseY, radius);
+                    }
+                    invalidate();
+                }
+                return true;
+            }
 
             case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP:
-            case MotionEvent.ACTION_CANCEL:
-                isTracking = false;
-                if (mProperties.forwardLock && (event.getY() - originY) < -radius * 1.15f) {
-                    sprintLocked = true;
-                    knobX = getWidth() / 2f;
-                    knobY = Math.max(ControlUtils.dpToPx(getContext(), 10f), getHeight() / 2f - radius * 1.15f);
-                    applyDirectionalKeys(true, false, false, false, true);
-                } else {
-                    sprintLocked = false;
-                    knobX = getWidth() / 2f;
-                    knobY = getHeight() / 2f;
-                    sendKeyPresses(false);
-                }
+            case MotionEvent.ACTION_CANCEL: {
+                int idx = event.getActionIndex();
+                float releaseY = (idx >= 0 && idx < event.getPointerCount()) ? event.getY(idx) : event.getY();
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                finishJoystickTracking(releaseY, radius);
                 invalidate();
                 return true;
+            }
         }
         return true;
+    }
+
+    private void finishJoystickTracking(float releaseY, float radius) {
+        isTracking = false;
+        if (mProperties.forwardLock && (releaseY - originY) < -radius * 1.15f) {
+            sprintLocked = true;
+            knobX = getWidth() / 2f;
+            knobY = Math.max(ControlUtils.dpToPx(getContext(), 10f), getHeight() / 2f - radius * 1.15f);
+            applyDirectionalKeys(true, false, false, false, true);
+        } else {
+            sprintLocked = false;
+            knobX = getWidth() / 2f;
+            knobY = getHeight() / 2f;
+            sendKeyPresses(false);
+        }
     }
 
     private void updateStickPosition(float x, float y, float radius) {

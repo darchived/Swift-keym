@@ -1,14 +1,11 @@
 package com.example.customcontrols;
 
-import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -16,6 +13,7 @@ import android.widget.TextView;
 
 import com.example.R;
 import com.example.customcontrols.utils.ControlUtils;
+import com.example.customcontrols.utils.OverlayWindowHelper;
 import com.example.input.LwjglGlfwKeycode;
 
 /**
@@ -40,7 +38,7 @@ public class VisualBindPickerDialog {
     }
 
     private final Context context;
-    private final Dialog dialog;
+    private final OverlayWindowHelper windowHost;
     private final OnBindSelectedListener listener;
 
     private LinearLayout keyTabContent;
@@ -53,12 +51,7 @@ public class VisualBindPickerDialog {
     public VisualBindPickerDialog(Context context, boolean isOverlayWindow, OnBindSelectedListener listener) {
         this.context = context;
         this.listener = listener;
-        this.dialog = new Dialog(context, R.style.Theme_SwiftKeyM_OverlayDialog);
-        this.dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
-        if (isOverlayWindow && dialog.getWindow() != null) {
-            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-        }
+        this.windowHost = new OverlayWindowHelper(context, isOverlayWindow);
         buildUi();
     }
 
@@ -134,7 +127,7 @@ public class VisualBindPickerDialog {
         Button clearBtn = createActionPill(context.getString(R.string.bind_clear), 0xFF3A3A3A, 0xFFE0E0E0);
         clearBtn.setOnClickListener(v -> {
             if (listener != null) listener.onBindSelected(LwjglGlfwKeycode.GLFW_KEY_UNKNOWN, "UNKNOWN");
-            dialog.dismiss();
+            windowHost.dismiss();
         });
 
         Button closeBtn = createActionPill(context.getString(R.string.bind_close), 0xFFFFFFFF, 0xFF1E1E1E);
@@ -144,18 +137,15 @@ public class VisualBindPickerDialog {
         );
         closeLp.setMarginStart((int) ControlUtils.dpToPx(context, 8f));
         closeBtn.setLayoutParams(closeLp);
-        closeBtn.setOnClickListener(v -> dialog.dismiss());
+        closeBtn.setOnClickListener(v -> windowHost.dismiss());
 
         footer.addView(clearBtn);
         footer.addView(closeBtn);
         root.addView(footer);
 
-        dialog.setContentView(root);
-        if (dialog.getWindow() != null) {
-            int w = (int) (ControlUtils.getScreenWidth(context) * 0.90f);
-            int h = (int) (ControlUtils.getScreenHeight(context) * 0.88f);
-            dialog.getWindow().setLayout(Math.max((int) ControlUtils.dpToPx(context, 520f), w), h);
-        }
+        int w = (int) (ControlUtils.getScreenWidth(context) * 0.90f);
+        int h = (int) (ControlUtils.getScreenHeight(context) * 0.88f);
+        windowHost.setContentView(root, Math.max((int) ControlUtils.dpToPx(context, 520f), w), h, Gravity.CENTER, false);
     }
 
     private TextView createTabButton(String label) {
@@ -315,7 +305,7 @@ public class VisualBindPickerDialog {
                 btn.setLayoutParams(kLp);
                 btn.setOnClickListener(v -> {
                     if (listener != null) listener.onBindSelected(cap.code, cap.label);
-                    dialog.dismiss();
+                    windowHost.dismiss();
                 });
                 row.addView(btn);
             }
@@ -346,7 +336,7 @@ public class VisualBindPickerDialog {
             btn.setLayoutParams(lp);
             btn.setOnClickListener(v -> {
                 if (listener != null) listener.onBindSelected(cap.code, cap.label);
-                dialog.dismiss();
+                windowHost.dismiss();
             });
             panel.addView(btn);
         }
@@ -374,7 +364,7 @@ public class VisualBindPickerDialog {
             btn.setLayoutParams(lp);
             btn.setOnClickListener(v -> {
                 if (listener != null) listener.onBindSelected(cap.code, cap.label);
-                dialog.dismiss();
+                windowHost.dismiss();
             });
             panel.addView(btn);
         }
@@ -424,6 +414,6 @@ public class VisualBindPickerDialog {
     }
 
     public void show() {
-        dialog.show();
+        windowHost.show();
     }
 }
