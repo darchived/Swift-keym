@@ -25,9 +25,11 @@ jobs:
           curl -fsSL https://services.gradle.org/distributions/gradle-9.3.1-bin.zip -o /tmp/gradle.zip
           unzip -q -o /tmp/gradle.zip -d "$HOME"
           echo "$HOME/gradle-9.3.1/bin" >> "$GITHUB_PATH"
-          mkdir -p "$ANDROID_HOME/licenses"
-          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > "$ANDROID_HOME/licenses/android-sdk-license"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          sudo mkdir -p "$SDK_DIR/licenses" || mkdir -p "$SDK_DIR/licenses"
+          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" | (sudo tee "$SDK_DIR/licenses/android-sdk-license" >/dev/null || tee "$SDK_DIR/licenses/android-sdk-license" >/dev/null)
+          (yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1) || true
 
       - name: Prepare debug keystore
         run: |
