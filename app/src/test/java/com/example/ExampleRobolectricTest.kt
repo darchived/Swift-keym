@@ -1,0 +1,126 @@
+package com.example
+
+import android.content.Context
+import android.view.KeyEvent
+import android.view.MotionEvent
+import androidx.test.core.app.ApplicationProvider
+import com.example.customcontrols.ControlData
+import com.example.customcontrols.ControlLayout
+import com.example.customcontrols.ControlLayoutManager
+import com.example.customcontrols.CustomControls
+import com.example.input.LwjglGlfwKeycode
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class ExampleRobolectricTest {
+
+    @Test
+    fun `read app name and credits from context`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertEquals("Swift KeyM", context.getString(R.string.app_name))
+        assertEquals("Created by St3rlight • Team StarDevs", context.getString(R.string.app_credits))
+    }
+
+    @Test
+    fun `glfw keycodes map accurately to android key events`() {
+        assertEquals(KeyEvent.KEYCODE_W, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_W))
+        assertEquals(KeyEvent.KEYCODE_A, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_A))
+        assertEquals(KeyEvent.KEYCODE_S, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_S))
+        assertEquals(KeyEvent.KEYCODE_D, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_D))
+        assertEquals(KeyEvent.KEYCODE_SPACE, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_SPACE))
+        assertEquals(KeyEvent.KEYCODE_SHIFT_LEFT, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_LEFT_SHIFT))
+        assertEquals(KeyEvent.KEYCODE_CTRL_LEFT, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_LEFT_CONTROL))
+        assertEquals(KeyEvent.KEYCODE_TAB, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_TAB))
+        assertEquals(KeyEvent.KEYCODE_ESCAPE, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_ESCAPE))
+        assertEquals(KeyEvent.KEYCODE_F, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_F))
+        assertEquals(KeyEvent.KEYCODE_G, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_G))
+        assertEquals(KeyEvent.KEYCODE_M, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_M))
+        assertEquals(KeyEvent.KEYCODE_R, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_R))
+        assertEquals(KeyEvent.KEYCODE_1, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_1))
+        assertEquals(KeyEvent.KEYCODE_4, LwjglGlfwKeycode.toAndroidKeyCode(LwjglGlfwKeycode.GLFW_KEY_4))
+    }
+
+    @Test
+    fun `json layout round trip preserves controls drawers and joysticks`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val original = ControlLayoutManager.createDefaultFpsPreset()
+        val json = original.toJson()
+        val importedName = ControlLayoutManager.importLayoutJson(context, "custom_warzone.json", json)
+        val reloaded = CustomControls.fromJson(ControlLayoutManager.exportLayoutJson(context, importedName))
+
+        assertEquals(original.mControlDataList.size, reloaded.mControlDataList.size)
+        assertEquals(original.mDrawerDataList.size, reloaded.mDrawerDataList.size)
+        assertEquals(original.mJoystickDataList.size, reloaded.mJoystickDataList.size)
+        assertEquals("Shoot", reloaded.mControlDataList.first().name)
+    }
+
+    @Test
+    fun `undo redo and unsaved changes track layout mutations accurately`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val layout = ControlLayout(context)
+        layout.layout(0, 0, 1920, 1080)
+        layout.loadLayout(ControlLayoutManager.createDefaultFpsPreset())
+        layout.isModifiable = true
+
+        val initialCount = layout.layout.mControlDataList.size
+        assertFalse(layout.hasUnsavedChanges())
+        assertFalse(layout.canUndo())
+        assertFalse(layout.canRedo())
+
+        // Add a button -> dirty + undoable
+        val extra = ControlData("Extra", intArrayOf(LwjglGlfwKeycode.GLFW_KEY_E, 0, 0, 0), "0.5 * \${screen_width}", "0.5 * \${screen_height}", 56f, 56f)
+        layout.addControlButton(extra)
+        layout.notifyLayoutModified()
+
+        assertEquals(initialCount + 1, layout.layout.mControlDataList.size)
+        assertTrue(layout.hasUnsavedChanges())
+        assertTrue(layout.canUndo())
+        assertFalse(layout.canRedo())
+
+        // Undo -> restored to clean state
+        assertTrue(layout.undo())
+        assertEquals(initialCount, layout.layout.mControlDataList.size)
+        assertFalse(layout.hasUnsavedChanges())
+        assertFalse(layout.canUndo())
+        assertTrue(layout.canRedo())
+
+        // Redo -> button restored & dirty again
+        assertTrue(layout.redo())
+        assertEquals(initialCount + 1, layout.layout.mControlDataList.size)
+        assertTrue(layout.hasUnsavedChanges())
+
+        // Mark saved -> clean again
+        layout.markSaved()
+        assertFalse(layout.hasUnsavedChanges())
+    }
+
+    @Test
+    fun `control layout loads preset switches modes and handles play touch without crash`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val layout = ControlLayout(context)
+        layout.layout(0, 0, 1920, 1080)
+        layout.loadLayout(ControlLayoutManager.createDefaultFpsPreset())
+
+        assertFalse(layout.isModifiable)
+        layout.isModifiable = true
+        assertTrue(layout.isModifiable)
+        layout.isModifiable = false
+
+        val down = MotionEvent.obtain(100L, 100L, MotionEvent.ACTION_DOWN, 960f, 540f, 0)
+        val move = MotionEvent.obtain(100L, 116L, MotionEvent.ACTION_MOVE, 1000f, 560f, 0)
+        val up = MotionEvent.obtain(100L, 132L, MotionEvent.ACTION_UP, 1000f, 560f, 0)
+        assertTrue(layout.dispatchTouchEvent(down))
+        assertTrue(layout.dispatchTouchEvent(move))
+        assertTrue(layout.dispatchTouchEvent(up))
+        down.recycle()
+        move.recycle()
+        up.recycle()
+    }
+}

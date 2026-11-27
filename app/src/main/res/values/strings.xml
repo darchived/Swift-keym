@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Swift KeyM</string>
+    <string name="app_credits">Created by St3rlight • Team StarDevs</string>
+    <string name="editor_activity_title">Swift KeyM Editor</string>
+
+    <!-- Overlay & Service -->
+    <string name="overlay_channel_name">Swift KeyM Overlay</string>
+    <string name="overlay_notif_title">Swift KeyM Floating Overlay Active</string>
+    <string name="overlay_notif_text">Tap the top-center cogwheel to edit, adjust aim sensitivity, or hide HUD.</string>
+    <string name="overlay_action_stop">Exit Overlay</string>
+
+    <!-- Custom Controls Defaults & Cogwheel Context Menu -->
+    <string name="cog_add_button">Add button</string>
+    <string name="cog_add_drawer">Add button drawer</string>
+    <string name="cog_add_joystick">Add joystick</string>
+    <string name="cog_load">Load</string>
+    <string name="cog_save">Save</string>
+    <string name="cog_select_default">Select default controlmap</string>
+    <string name="cog_export">Export controlmap</string>
+    <string name="cog_hide_hud">Hide HUD</string>
+    <string name="cog_show_hud">Show HUD</string>
+    <string name="cog_edit_mode">Edit Mode</string>
+    <string name="cog_play_mode">Play Mode</string>
+    <string name="cog_exit">Exit</string>
+    <string name="editor_hint_line1">Touch the top center cogwheel to open the context menu</string>
+    <string name="editor_hint_line2">Tap a button to customize: edit, resize, remove, or change its keybinds.</string>
+
+    <!-- Swift KeyM Side Editor -->
+    <string name="edit_ctrl_title">Swift KeyM Editor</string>
+    <string name="edit_ctrl_name">Name</string>
+    <string name="edit_ctrl_size">Size</string>
+    <string name="edit_ctrl_mapping">Mapping</string>
+    <string name="edit_ctrl_custom_icon">Custom Icon</string>
+    <string name="edit_ctrl_pick_image">Pick Custom Image</string>
+    <string name="edit_ctrl_clear_image">Clear Image</string>
+    <string name="edit_ctrl_bg_color">Background color</string>
+    <string name="edit_ctrl_stroke_color">Stroke color</string>
+    <string name="edit_ctrl_stroke_width">Stroke width</string>
+    <string name="edit_ctrl_corner_radius">Corner radius</string>
+    <string name="edit_ctrl_opacity">Button Opacity</string>
+    <string name="edit_ctrl_visibility">Visibility</string>
+    <string name="edit_ctrl_in_game">In-game</string>
+    <string name="edit_ctrl_in_menus">In menus</string>
+    <string name="edit_ctrl_toggle">Toggleable</string>
+    <string name="edit_ctrl_passthru">Mouse pass-thru</string>
+    <string name="edit_ctrl_swipeable">Swipeable</string>
+    <string name="edit_ctrl_orientation">Drawer orientation</string>
+    <string name="edit_ctrl_forward_lock">Forward sprint lock</string>
+    <string name="edit_ctrl_absolute_stick">Fixed center stick</string>
+    <string name="edit_ctrl_add_subbutton">+ Add Sub-Button</string>
+    <string name="edit_ctrl_clone">CLONE</string>
+    <string name="edit_ctrl_delete">DELETE</string>
+    <string name="edit_ctrl_done">DONE</string>
+
+    <!-- Undo / Redo & Exit Confirmation -->
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="exit_leaving_title">Leaving?</string>
+    <string name="exit_leaving_message">Are you sure you want to exit?</string>
+    <string name="exit_no">NO</string>
+    <string name="exit_yes">YES</string>
+    <string name="exit_unsaved_title">Warning</string>
+    <string name="exit_unsaved_message">Warning: Layout is not saved. Are you sure you want to continue?</string>
+    <string name="exit_cancel">CANCEL</string>
+    <string name="exit_save_and_exit">SAVE &amp; EXIT</string>
+    <string name="exit_continue">CONTINUE</string>
+
+    <!-- Visual Bind Picker -->
+    <string name="bind_picker_title">Swift KeyM Bind Picker</string>
+    <string name="bind_tab_key">Key</string>
+    <string name="bind_tab_mouse">Mouse</string>
+    <string name="bind_tab_overlay">Overlay</string>
+    <string name="bind_clear">Delete Keybind</string>
+    <string name="bind_close">Close</string>
+
+    <!-- Color Selector -->
+    <string name="color_selector_title">Select Color</string>
+    <string name="color_selector_hex">Hex (AARRGGBB)</string>
+    <string name="color_selector_apply">Apply</string>
+    <string name="color_selector_cancel">Cancel</string>
+</resources>
