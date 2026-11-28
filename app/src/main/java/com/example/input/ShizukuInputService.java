@@ -36,6 +36,10 @@ public class ShizukuInputService extends IInputService.Stub {
     private volatile float cursorY = 540f;
 
     public ShizukuInputService() {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
+        } catch (Throwable ignored) {
+        }
         initReflection();
         setHardKeyboardImeSetting(true);
         initUinput();
@@ -255,6 +259,10 @@ public class ShizukuInputService extends IInputService.Stub {
     @Override
     public synchronized void injectMouseMove(float dx, float dy) {
         if (dx == 0f && dy == 0f) return;
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
+        } catch (Throwable ignored) {
+        }
 
         // Primary backend: /dev/uinput Virtual Mouse device
         if (uinputMouseFd >= 0) {
@@ -420,6 +428,10 @@ public class ShizukuInputService extends IInputService.Stub {
 
         // Guarantee soft keyboard IME is re-enabled immediately
         setHardKeyboardImeSetting(true);
+        try {
+            Runtime.getRuntime().exec(new String[]{"settings", "put", "secure", "show_ime_with_hard_keyboard", "1"});
+            Runtime.getRuntime().exec(new String[]{"input", "keyevent", "0"});
+        } catch (Throwable ignored) {}
 
         System.exit(0);
     }

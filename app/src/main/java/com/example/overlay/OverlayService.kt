@@ -18,7 +18,9 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
@@ -126,6 +128,19 @@ class OverlayService : Service() {
     private var crosshairParams: WindowManager.LayoutParams? = null
 
     private var isHudHidden = false
+
+    private val antiRecoilHandler = Handler(Looper.getMainLooper())
+    private val antiRecoilRunnable = object : Runnable {
+        override fun run() {
+            if (_isRunning.value && !isHudHidden && controlLayout?.isModifiable != true) {
+                val recoil = ControlLayoutManager.getAimAntiRecoil(this@OverlayService)
+                if (recoil > 0 && InputBridge.isPrimaryMouseDown) {
+                    InputBridge.sendMouseMove(0f, recoil.toFloat())
+                }
+            }
+            antiRecoilHandler.postDelayed(this, 16L)
+        }
+    }
 
     private val windowOverlayHost = object : ControlLayout.WindowOverlayHost {
         override fun getOverlayScreenWidth(): Int = screenWidthPx
@@ -246,6 +261,7 @@ class OverlayService : Service() {
         updateScreenDimensions()
         ShizukuHelper.init()
         ShizukuHelper.bindInputService(this)
+        antiRecoilHandler.postDelayed(antiRecoilRunnable, 16L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -1067,6 +1083,7 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         _isRunning.value = false
+        antiRecoilHandler.removeCallbacksAndMessages(null)
         gyroController?.stop()
         gyroController = null
         InputBridge.setSpecialActionListener(null)
@@ -1094,6 +1111,10 @@ class OverlayService : Service() {
         keyboardDrawer = null
 
         try {
+            ShizukuHelper.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
+        } catch (_: Throwable) {}
+
+        try {
             ShizukuHelper.unbindInputService()
         } catch (_: Throwable) {}
 
@@ -1119,6 +1140,7 @@ class OverlayService : Service() {
     /**
      * Right-half invisible 3D Aim Swipe Zone layered beneath individual buttons.
      * Active only when Aim Look is toggled ON.
+     * Uses 120Hz (8ms) coalescing flush loop + sub-pixel remainder accumulator to prevent lag spikes.
      */
     private inner class AimSwipeZoneView(context: Context) : View(context) {
         private var activePointerId = MotionEvent.INVALID_POINTER_ID
@@ -1129,8 +1151,70 @@ class OverlayService : Service() {
             strokeWidth = ControlUtils.dpToPx(context, 1f)
         }
 
+        private val aimLock = Any()
+        private var pendingDx = 0f
+        private var pendingDy = 0f
+        private var isFlushLoopRunning = false
+        private val flushHandler = Handler(Looper.getMainLooper())
+
+        private val flushRunnable = object : Runnable {
+            override fun run() {
+                if (!isFlushLoopRunning) return
+                var sendX = 0
+                var sendY = 0
+                synchronized(aimLock) {
+                    val intX = pendingDx.toInt()
+                    val intY = pendingDy.toInt()
+                    if (intX != 0 || intY != 0) {
+                        sendX = intX
+                        sendY = intY
+                        pendingDx -= intX.toFloat()
+                        pendingDy -= intY.toFloat()
+                    }
+                }
+                if (sendX != 0 || sendY != 0) {
+                    InputBridge.sendMouseMove(sendX.toFloat(), sendY.toFloat())
+                }
+                if (isFlushLoopRunning) {
+                    flushHandler.postDelayed(this, 8L)
+                }
+            }
+        }
+
+        private fun startFlushLoop() {
+            if (!isFlushLoopRunning) {
+                isFlushLoopRunning = true
+                flushHandler.post(flushRunnable)
+            }
+        }
+
+        private fun stopFlushLoop() {
+            isFlushLoopRunning = false
+            flushHandler.removeCallbacks(flushRunnable)
+            var sendX = 0
+            var sendY = 0
+            synchronized(aimLock) {
+                val intX = pendingDx.toInt()
+                val intY = pendingDy.toInt()
+                if (intX != 0 || intY != 0) {
+                    sendX = intX
+                    sendY = intY
+                    pendingDx -= intX.toFloat()
+                    pendingDy -= intY.toFloat()
+                }
+            }
+            if (sendX != 0 || sendY != 0) {
+                InputBridge.sendMouseMove(sendX.toFloat(), sendY.toFloat())
+            }
+        }
+
         fun resetPointer() {
             activePointerId = MotionEvent.INVALID_POINTER_ID
+            stopFlushLoop()
+            synchronized(aimLock) {
+                pendingDx = 0f
+                pendingDy = 0f
+            }
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -1156,6 +1240,7 @@ class OverlayService : Service() {
                         activePointerId = event.getPointerId(idx)
                         lastX = event.getX(idx)
                         lastY = event.getY(idx)
+                        startFlushLoop()
                     }
                     return true
                 }
@@ -1170,6 +1255,7 @@ class OverlayService : Service() {
                         activePointerId = event.getPointerId(0)
                         lastX = event.getX(0)
                         lastY = event.getY(0)
+                        startFlushLoop()
                         return true
                     }
                     if (idx >= 0) {
@@ -1181,7 +1267,31 @@ class OverlayService : Service() {
                         lastY = currY
                         val maxStep = screenWidthPx * 0.45f
                         if ((dx != 0f || dy != 0f) && hypot(dx.toDouble(), dy.toDouble()) < maxStep) {
-                            InputBridge.sendMouseMove(dx * sensitivity, dy * sensitivity)
+                            var moveX = dx * sensitivity
+                            var moveY = dy * sensitivity
+
+                            // 1. Head-Level Horizontal Stabilizer (vertical dampening)
+                            val vertDampening = ControlLayoutManager.getAimVertDampening(context)
+                            if (vertDampening > 0f && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                                moveY *= (1.0f - vertDampening)
+                            }
+
+                            // 2. CODM Speed Acceleration
+                            val speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
+                            if (speedAccelEnabled) {
+                                val speed = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                                val accelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
+                                if (speed > 8f) {
+                                    val factor = 1.0f + ((speed - 8f) / 24f).coerceIn(0f, 1.0f) * (accelMultiplier - 1.0f)
+                                    moveX *= factor
+                                }
+                            }
+
+                            synchronized(aimLock) {
+                                pendingDx += moveX
+                                pendingDy += moveY
+                            }
+                            startFlushLoop()
                         }
                     }
                     return true
@@ -1204,6 +1314,7 @@ class OverlayService : Service() {
                             lastY = event.getY(replacementIdx)
                         } else {
                             activePointerId = MotionEvent.INVALID_POINTER_ID
+                            stopFlushLoop()
                         }
                     }
                     return true
@@ -1211,6 +1322,7 @@ class OverlayService : Service() {
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
+                    stopFlushLoop()
                     return true
                 }
             }

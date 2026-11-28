@@ -435,6 +435,52 @@ class FloatingSettingsDrawerView(
             ControlLayoutManager.setAimSensitivity(context, value)
             callbacks.onAimSensitivitySet(value)
         }
+        addFloatSliderRow(
+            list,
+            label = "Head-Level Stabilizer",
+            min = 0f,
+            max = 0.80f,
+            step = 0.05f,
+            initial = ControlLayoutManager.getAimVertDampening(context),
+            sp = sp,
+            format = "%.0f%%",
+            displayAsPercent = true
+        ) { dampening ->
+            ControlLayoutManager.setAimVertDampening(context, dampening)
+        }
+        addSwitchRow(
+            list,
+            "Speed Acceleration",
+            ControlLayoutManager.isAimSpeedAccelEnabled(context),
+            sp
+        ) { checked ->
+            ControlLayoutManager.setAimSpeedAccelEnabled(context, checked)
+        }
+        addFloatSliderRow(
+            list,
+            label = "Speed Accel Boost",
+            min = 1.0f,
+            max = 3.0f,
+            step = 0.1f,
+            initial = ControlLayoutManager.getAimSpeedAccelMultiplier(context),
+            sp = sp,
+            format = "%.1fx"
+        ) { mult ->
+            ControlLayoutManager.setAimSpeedAccelMultiplier(context, mult)
+        }
+        addFloatSliderRow(
+            list,
+            label = "Anti-Recoil Pull-Down",
+            min = 0f,
+            max = 20f,
+            step = 1f,
+            initial = ControlLayoutManager.getAimAntiRecoil(context).toFloat(),
+            sp = sp,
+            format = "%.0f",
+            valueFormatter = { v -> if (v.toInt() == 0) "OFF" else "${v.toInt()}" }
+        ) { recoil ->
+            ControlLayoutManager.setAimAntiRecoil(context, Math.round(recoil))
+        }
         addSwitchRow(
             list,
             "Auto-Pause Aim on ESC/Tab/M",
@@ -906,6 +952,7 @@ class FloatingSettingsDrawerView(
         sp: Int,
         format: String,
         displayAsPercent: Boolean = false,
+        valueFormatter: ((Float) -> String)? = null,
         onChange: (Float) -> Unit
     ) {
         val box = LinearLayout(context).apply {
@@ -914,7 +961,11 @@ class FloatingSettingsDrawerView(
         }
         val tv = TextView(context).apply {
             val disp = if (displayAsPercent) initial * 100f else initial
-            text = "$label: ${String.format(Locale.US, format, disp)}"
+            text = if (valueFormatter != null) {
+                "$label: ${valueFormatter(disp)}"
+            } else {
+                "$label: ${String.format(Locale.US, format, disp)}"
+            }
             setTextColor(0xFFE0E0E0.toInt())
             textSize = 12f
         }
@@ -927,7 +978,11 @@ class FloatingSettingsDrawerView(
                     if (!fromUser) return
                     val value = ControlUtils.clamp(min + (progress * step), min, max)
                     val disp = if (displayAsPercent) value * 100f else value
-                    tv.text = "$label: ${String.format(Locale.US, format, disp)}"
+                    tv.text = if (valueFormatter != null) {
+                        "$label: ${valueFormatter(disp)}"
+                    } else {
+                        "$label: ${String.format(Locale.US, format, disp)}"
+                    }
                     onChange(value)
                 }
 

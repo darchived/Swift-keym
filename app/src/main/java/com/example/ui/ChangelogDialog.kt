@@ -43,13 +43,32 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.6.0",
+        version = "v1.6.2",
         tag = "Latest",
+        items = listOf(
+            "120Hz (8ms) Aim Coalescing & Sub-Pixel Accumulator: Eliminates swipe micro-stutters and AIDL IPC flooding while preserving fractional precision.",
+            "Elevated Shizuku input thread priority (THREAD_PRIORITY_URGENT_DISPLAY) for zero-latency camera look.",
+            "Head-Level Horizontal Stabilizer (0%–80%): Dampens accidental vertical wobble during fast turns to keep crosshairs locked at head height.",
+            "CODM Speed Acceleration (1.0x–3.0x): Dynamic flick curve allowing 1:1 micro-precision on slow drags and instant 180° turns on fast flicks.",
+            "Anti-Recoil Pull-Down (0–20): Automatic 16ms downward compensation while holding Shoot (MB1) for steady full-auto spray control."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.6.1",
+        tag = "Stable",
+        items = listOf(
+            "CRITICAL FIX: Fully restored physical and on-screen soft keyboard usability immediately upon stopping the overlay service.",
+            "Enforced immediate uinput device teardown and secure settings synchronization (show_ime_with_hard_keyboard = 1) on service shutdown.",
+            "Brand new Floating QWERTY Typing Keyboard (⌨) window and quick toggle buttons."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.6.0",
+        tag = "Stable",
         items = listOf(
             "Brand new Floating QWERTY Typing Keyboard (⌨) window for in-game text input, chat, and shortcuts.",
             "Quick keyboard toggle button added directly to both the top floating bar and the Cogwheel menu.",
-            "Robust soft keyboard restoration (show_ime_with_hard_keyboard = 1) and uinput cleanup when stopping the overlay service.",
-            "Split /dev/uinput virtual mouse and keyboard devices ensuring 100% reliable WASD and key injection in GeForce NOW."
+            "Robust soft keyboard restoration and uinput cleanup when stopping the overlay service."
         )
     ),
     ChangelogRelease(

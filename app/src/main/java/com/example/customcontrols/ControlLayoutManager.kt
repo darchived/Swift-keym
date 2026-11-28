@@ -23,6 +23,10 @@ object ControlLayoutManager {
     private const val PREFS_NAME = "swift_keym_prefs"
     private const val KEY_ACTIVE_LAYOUT = "active_layout"
     private const val KEY_AIM_SENSITIVITY = "aim_sensitivity"
+    private const val KEY_AIM_VERT_DAMPENING = "aim_vert_dampening"
+    private const val KEY_AIM_SPEED_ACCEL_ENABLED = "aim_speed_accel_enabled"
+    private const val KEY_AIM_SPEED_ACCEL_MULTIPLIER = "aim_speed_accel_multiplier"
+    private const val KEY_AIM_ANTI_RECOIL = "aim_anti_recoil"
     private const val KEY_GLOBAL_OPACITY = "global_opacity"
     private const val KEY_TOUCH_RIPPLE = "touch_ripple_enabled"
     private const val KEY_GYRO_ENABLED = "gyro_enabled"
@@ -256,6 +260,57 @@ object ControlLayoutManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putFloat(KEY_AIM_SENSITIVITY, sensitivity.coerceIn(0.2f, 5.0f))
+            .apply()
+    }
+
+    fun getAimVertDampening(context: Context): Float {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AIM_VERT_DAMPENING, 0.0f)
+            .coerceIn(0.0f, 0.8f)
+    }
+
+    fun setAimVertDampening(context: Context, dampening: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_VERT_DAMPENING, dampening.coerceIn(0.0f, 0.8f))
+            .apply()
+    }
+
+    fun isAimSpeedAccelEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AIM_SPEED_ACCEL_ENABLED, false)
+    }
+
+    fun setAimSpeedAccelEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AIM_SPEED_ACCEL_ENABLED, enabled)
+            .apply()
+    }
+
+    fun getAimSpeedAccelMultiplier(context: Context): Float {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AIM_SPEED_ACCEL_MULTIPLIER, 1.5f)
+            .coerceIn(1.0f, 3.0f)
+    }
+
+    fun setAimSpeedAccelMultiplier(context: Context, multiplier: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_SPEED_ACCEL_MULTIPLIER, multiplier.coerceIn(1.0f, 3.0f))
+            .apply()
+    }
+
+    fun getAimAntiRecoil(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_AIM_ANTI_RECOIL, 0)
+            .coerceIn(0, 20)
+    }
+
+    fun setAimAntiRecoil(context: Context, recoil: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_AIM_ANTI_RECOIL, recoil.coerceIn(0, 20))
             .apply()
     }
 

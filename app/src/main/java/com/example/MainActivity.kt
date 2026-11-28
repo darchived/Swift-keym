@@ -148,6 +148,10 @@ class MainActivity : ComponentActivity() {
         var layouts by remember { mutableStateOf(ControlLayoutManager.listLayouts(context)) }
         var activeLayoutName by remember { mutableStateOf(ControlLayoutManager.getActiveLayoutName(context)) }
         var aimSensitivity by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensitivity(context)) }
+        var vertDampening by remember { mutableFloatStateOf(ControlLayoutManager.getAimVertDampening(context)) }
+        var speedAccelEnabled by remember { mutableStateOf(ControlLayoutManager.isAimSpeedAccelEnabled(context)) }
+        var speedAccelMultiplier by remember { mutableFloatStateOf(ControlLayoutManager.getAimSpeedAccelMultiplier(context)) }
+        var antiRecoil by remember { mutableFloatStateOf(ControlLayoutManager.getAimAntiRecoil(context).toFloat()) }
         var globalOpacity by remember { mutableFloatStateOf(ControlLayoutManager.getGlobalOpacity(context)) }
         var touchRippleEnabled by remember { mutableStateOf(ControlLayoutManager.isTouchRippleEnabled(context)) }
         var gyroEnabled by remember { mutableStateOf(ControlLayoutManager.isGyroEnabled(context)) }
@@ -177,6 +181,10 @@ class MainActivity : ComponentActivity() {
             layouts = ControlLayoutManager.listLayouts(context)
             activeLayoutName = ControlLayoutManager.getActiveLayoutName(context)
             aimSensitivity = ControlLayoutManager.getAimSensitivity(context)
+            vertDampening = ControlLayoutManager.getAimVertDampening(context)
+            speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
+            speedAccelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
+            antiRecoil = ControlLayoutManager.getAimAntiRecoil(context).toFloat()
             globalOpacity = ControlLayoutManager.getGlobalOpacity(context)
             touchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(context)
             gyroEnabled = ControlLayoutManager.isGyroEnabled(context)
@@ -704,9 +712,136 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                             Text(
-                                text = "Swiping the Aim Zone injects relative mouse deltas (AXIS_RELATIVE_X/Y) for 360° FPS camera turning alongside WASD & MB1/MB2.",
+                                text = "Swiping the Aim Zone injects relative mouse deltas (AXIS_RELATIVE_X/Y) with 120Hz coalescing for 360° FPS camera turning.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MutedGrey
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Head-Level Stabilizer",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = "${Math.round(vertDampening * 100f)}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = vertDampening,
+                                onValueChange = { next ->
+                                    vertDampening = next
+                                    ControlLayoutManager.setAimVertDampening(context, next)
+                                },
+                                valueRange = 0f..0.8f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Speed Acceleration",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "Dynamic flick curve for fast 180° turns",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MutedGrey
+                                    )
+                                }
+                                Switch(
+                                    checked = speedAccelEnabled,
+                                    onCheckedChange = { enabled ->
+                                        speedAccelEnabled = enabled
+                                        ControlLayoutManager.setAimSpeedAccelEnabled(context, enabled)
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = BgDarkGrey,
+                                        checkedTrackColor = PureWhite,
+                                        uncheckedThumbColor = MutedGrey,
+                                        uncheckedTrackColor = BgDarkGrey
+                                    )
+                                )
+                            }
+
+                            if (speedAccelEnabled) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Speed Accel Boost",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = String.format(Locale.US, "%.1fx", speedAccelMultiplier),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = PureWhite
+                                    )
+                                }
+                                Slider(
+                                    value = speedAccelMultiplier,
+                                    onValueChange = { next ->
+                                        speedAccelMultiplier = next
+                                        ControlLayoutManager.setAimSpeedAccelMultiplier(context, next)
+                                    },
+                                    valueRange = 1.0f..3.0f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = PureWhite,
+                                        activeTrackColor = PureWhite,
+                                        inactiveTrackColor = BorderGrey
+                                    )
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Anti-Recoil Pull-Down",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = if (antiRecoil.toInt() == 0) "OFF" else "${antiRecoil.toInt()}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = antiRecoil,
+                                onValueChange = { next ->
+                                    antiRecoil = next
+                                    ControlLayoutManager.setAimAntiRecoil(context, Math.round(next))
+                                },
+                                valueRange = 0f..20f,
+                                steps = 19,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
