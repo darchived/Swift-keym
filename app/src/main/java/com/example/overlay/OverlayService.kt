@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
@@ -129,13 +130,32 @@ class OverlayService : Service() {
 
     private var isHudHidden = false
 
+    private var shootPressStartTime = 0L
+    private var lastPrimaryMouseDown = false
+
     private val antiRecoilHandler = Handler(Looper.getMainLooper())
     private val antiRecoilRunnable = object : Runnable {
         override fun run() {
+            val isShooting = InputBridge.isPrimaryMouseDown
+            val now = SystemClock.uptimeMillis()
+            if (isShooting && !lastPrimaryMouseDown) {
+                shootPressStartTime = now
+            }
+            lastPrimaryMouseDown = isShooting
+
             if (_isRunning.value && !isHudHidden && controlLayout?.isModifiable != true) {
-                val recoil = ControlLayoutManager.getAimAntiRecoil(this@OverlayService)
-                if (recoil > 0 && InputBridge.isPrimaryMouseDown) {
-                    InputBridge.sendMouseMove(0f, recoil.toFloat())
+                val recoilY = ControlLayoutManager.getAimAntiRecoilY(this@OverlayService)
+                val recoilX = ControlLayoutManager.getAimAntiRecoilX(this@OverlayService)
+                if (isShooting && (recoilY > 0f || recoilX != 0f)) {
+                    val isKick = (now - shootPressStartTime) <= 350L
+                    val kickBoost = ControlLayoutManager.getAimInitialKickBoost(this@OverlayService)
+                    val activeAimZone = aimZoneView
+                    if (activeAimZone != null && isAimEnabled) {
+                        activeAimZone.addRecoilTick(recoilX, recoilY, kickBoost, isKick)
+                    } else {
+                        val kickMultiplier = if (isKick) (1.0f + kickBoost) else 1.0f
+                        InputBridge.sendMouseMove(recoilX, recoilY * kickMultiplier)
+                    }
                 }
             }
             antiRecoilHandler.postDelayed(this, 16L)
@@ -1208,12 +1228,34 @@ class OverlayService : Service() {
             }
         }
 
+        @Volatile private var thumbDownDragAccumulator = 0f
+
+        fun addRecoilTick(recoilX: Float, baseRecoilY: Float, kickBoost: Float, isInitialKick: Boolean) {
+            val kickMultiplier = if (isInitialKick) (1.0f + kickBoost) else 1.0f
+            val targetRecoilY = baseRecoilY * kickMultiplier
+
+            // Smart Thumb Override: subtract manual downward thumb drag so crosshair doesn't over-pull
+            val manualDrag = synchronized(aimLock) {
+                val d = thumbDownDragAccumulator
+                thumbDownDragAccumulator = 0f
+                d
+            }
+            val effectiveRecoilY = (targetRecoilY - manualDrag).coerceAtLeast(0f)
+
+            synchronized(aimLock) {
+                pendingDx += recoilX
+                pendingDy += effectiveRecoilY
+            }
+            startFlushLoop()
+        }
+
         fun resetPointer() {
             activePointerId = MotionEvent.INVALID_POINTER_ID
             stopFlushLoop()
             synchronized(aimLock) {
                 pendingDx = 0f
                 pendingDy = 0f
+                thumbDownDragAccumulator = 0f
             }
         }
 
@@ -1270,22 +1312,47 @@ class OverlayService : Service() {
                             var moveX = dx * sensitivity
                             var moveY = dy * sensitivity
 
-                            // 1. Head-Level Horizontal Stabilizer (vertical dampening)
+                            // Smart Thumb Override: track downward drag so auto-recoil doesn't double-dip
+                            if (dy > 0f) {
+                                synchronized(aimLock) {
+                                    thumbDownDragAccumulator += (dy * sensitivity)
+                                }
+                            }
+
+                            // 1. ADS / Scope Sensitivity Multiplier (when holding MB2 / secondary mouse button)
+                            if (InputBridge.isSecondaryMouseDown) {
+                                val adsMult = ControlLayoutManager.getAimAdsMultiplier(context)
+                                moveX *= adsMult
+                                moveY *= adsMult
+                            }
+
+                            // 2. Head-Level Horizontal Stabilizer (vertical dampening)
                             val vertDampening = ControlLayoutManager.getAimVertDampening(context)
                             if (vertDampening > 0f && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
                                 moveY *= (1.0f - vertDampening)
                             }
 
-                            // 2. CODM Speed Acceleration
-                            val speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
-                            if (speedAccelEnabled) {
-                                val speed = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-                                val accelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
-                                if (speed > 8f) {
-                                    val factor = 1.0f + ((speed - 8f) / 24f).coerceIn(0f, 1.0f) * (accelMultiplier - 1.0f)
-                                    moveX *= factor
+                            // 3. CODM-Style 3-Zone Velocity Curve (Sticky Micro-Tracking + Standard + Flick Boost)
+                            val rawSpeed = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                            val stickySlowdown = ControlLayoutManager.getAimStickySlowdown(context)
+                            val velocityFactor = if (rawSpeed <= 2.5f) {
+                                stickySlowdown
+                            } else if (rawSpeed < 6.0f) {
+                                val t = (rawSpeed - 2.5f) / 3.5f
+                                stickySlowdown + t * (1.0f - stickySlowdown)
+                            } else if (rawSpeed <= 12.0f) {
+                                1.0f
+                            } else {
+                                val speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
+                                if (speedAccelEnabled) {
+                                    val accelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
+                                    1.0f + ((rawSpeed - 12f) / 24f).coerceIn(0f, 1.0f) * (accelMultiplier - 1.0f)
+                                } else {
+                                    1.0f
                                 }
                             }
+                            moveX *= velocityFactor
+                            moveY *= velocityFactor
 
                             synchronized(aimLock) {
                                 pendingDx += moveX

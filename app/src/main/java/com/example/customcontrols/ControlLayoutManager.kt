@@ -27,6 +27,11 @@ object ControlLayoutManager {
     private const val KEY_AIM_SPEED_ACCEL_ENABLED = "aim_speed_accel_enabled"
     private const val KEY_AIM_SPEED_ACCEL_MULTIPLIER = "aim_speed_accel_multiplier"
     private const val KEY_AIM_ANTI_RECOIL = "aim_anti_recoil"
+    private const val KEY_AIM_ANTI_RECOIL_Y = "aim_anti_recoil_y"
+    private const val KEY_AIM_ANTI_RECOIL_X = "aim_anti_recoil_x"
+    private const val KEY_AIM_INITIAL_KICK_BOOST = "aim_initial_kick_boost"
+    private const val KEY_AIM_STICKY_SLOWDOWN = "aim_sticky_slowdown"
+    private const val KEY_AIM_ADS_MULTIPLIER = "aim_ads_multiplier"
     private const val KEY_GLOBAL_OPACITY = "global_opacity"
     private const val KEY_TOUCH_RIPPLE = "touch_ripple_enabled"
     private const val KEY_GYRO_ENABLED = "gyro_enabled"
@@ -301,17 +306,85 @@ object ControlLayoutManager {
             .apply()
     }
 
-    fun getAimAntiRecoil(context: Context): Int {
+    fun getAimAntiRecoilY(context: Context): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_AIM_ANTI_RECOIL_Y)) {
+            prefs.getFloat(KEY_AIM_ANTI_RECOIL_Y, 0.00f).coerceIn(0.00f, 3.00f)
+        } else {
+            // Backward-compat: check legacy integer setting if present
+            val legacy = prefs.getInt(KEY_AIM_ANTI_RECOIL, 0)
+            if (legacy > 0) (legacy * 0.05f).coerceIn(0.00f, 3.00f) else 0.00f
+        }
+    }
+
+    fun setAimAntiRecoilY(context: Context, recoilY: Float) {
+        val clean = recoilY.coerceIn(0.00f, 3.00f)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_ANTI_RECOIL_Y, clean)
+            .putInt(KEY_AIM_ANTI_RECOIL, Math.round(clean * 20f))
+            .apply()
+    }
+
+    fun getAimAntiRecoilX(context: Context): Float {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_AIM_ANTI_RECOIL, 0)
-            .coerceIn(0, 20)
+            .getFloat(KEY_AIM_ANTI_RECOIL_X, 0.00f)
+            .coerceIn(-1.50f, 1.50f)
+    }
+
+    fun setAimAntiRecoilX(context: Context, recoilX: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_ANTI_RECOIL_X, recoilX.coerceIn(-1.50f, 1.50f))
+            .apply()
+    }
+
+    fun getAimInitialKickBoost(context: Context): Float {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AIM_INITIAL_KICK_BOOST, 0.30f)
+            .coerceIn(0.0f, 1.0f)
+    }
+
+    fun setAimInitialKickBoost(context: Context, boost: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_INITIAL_KICK_BOOST, boost.coerceIn(0.0f, 1.0f))
+            .apply()
+    }
+
+    fun getAimStickySlowdown(context: Context): Float {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AIM_STICKY_SLOWDOWN, 0.45f)
+            .coerceIn(0.30f, 0.85f)
+    }
+
+    fun setAimStickySlowdown(context: Context, factor: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_STICKY_SLOWDOWN, factor.coerceIn(0.30f, 0.85f))
+            .apply()
+    }
+
+    fun getAimAdsMultiplier(context: Context): Float {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AIM_ADS_MULTIPLIER, 0.70f)
+            .coerceIn(0.30f, 1.20f)
+    }
+
+    fun setAimAdsMultiplier(context: Context, multiplier: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_ADS_MULTIPLIER, multiplier.coerceIn(0.30f, 1.20f))
+            .apply()
+    }
+
+    fun getAimAntiRecoil(context: Context): Int {
+        val y = getAimAntiRecoilY(context)
+        return Math.round(y * 20f).coerceIn(0, 60)
     }
 
     fun setAimAntiRecoil(context: Context, recoil: Int) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putInt(KEY_AIM_ANTI_RECOIL, recoil.coerceIn(0, 20))
-            .apply()
+        setAimAntiRecoilY(context, (recoil / 20.0f).coerceIn(0.00f, 3.00f))
     }
 
     fun getGlobalOpacity(context: Context): Float {

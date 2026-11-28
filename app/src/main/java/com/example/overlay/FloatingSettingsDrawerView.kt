@@ -437,6 +437,30 @@ class FloatingSettingsDrawerView(
         }
         addFloatSliderRow(
             list,
+            label = "ADS Scope Multiplier",
+            min = 0.30f,
+            max = 1.20f,
+            step = 0.05f,
+            initial = ControlLayoutManager.getAimAdsMultiplier(context),
+            sp = sp,
+            format = "%.2fx"
+        ) { mult ->
+            ControlLayoutManager.setAimAdsMultiplier(context, mult)
+        }
+        addFloatSliderRow(
+            list,
+            label = "Sticky Aim (Micro-Track)",
+            min = 0.30f,
+            max = 0.85f,
+            step = 0.05f,
+            initial = ControlLayoutManager.getAimStickySlowdown(context),
+            sp = sp,
+            format = "%.2fx"
+        ) { factor ->
+            ControlLayoutManager.setAimStickySlowdown(context, factor)
+        }
+        addFloatSliderRow(
+            list,
             label = "Head-Level Stabilizer",
             min = 0f,
             max = 0.80f,
@@ -468,18 +492,79 @@ class FloatingSettingsDrawerView(
         ) { mult ->
             ControlLayoutManager.setAimSpeedAccelMultiplier(context, mult)
         }
+
+        // Anti-Recoil Quick Presets (1-tap row)
+        val currentRecoilY = ControlLayoutManager.getAimAntiRecoilY(context)
+        val recoilPresetIdx = when {
+            currentRecoilY <= 0.001f -> 0
+            Math.abs(currentRecoilY - 0.15f) < 0.04f -> 1
+            Math.abs(currentRecoilY - 0.35f) < 0.04f -> 2
+            Math.abs(currentRecoilY - 0.65f) < 0.04f -> 3
+            else -> -1
+        }
+        addChipSelectorRow(
+            list,
+            labels = arrayOf("Off (0.00)", "Low (0.15)", "Med (0.35)", "High (0.65)"),
+            selectedIndex = recoilPresetIdx,
+            sp = sp
+        ) { idx ->
+            val presetVal = when (idx) {
+                0 -> 0.00f
+                1 -> 0.15f
+                2 -> 0.35f
+                3 -> 0.65f
+                else -> 0.00f
+            }
+            ControlLayoutManager.setAimAntiRecoilY(context, presetVal)
+            refreshContent(Page.MAIN)
+        }
+
         addFloatSliderRow(
             list,
-            label = "Anti-Recoil Pull-Down",
-            min = 0f,
-            max = 20f,
-            step = 1f,
-            initial = ControlLayoutManager.getAimAntiRecoil(context).toFloat(),
+            label = "Vertical Anti-Recoil",
+            min = 0.00f,
+            max = 3.00f,
+            step = 0.05f,
+            initial = currentRecoilY,
             sp = sp,
-            format = "%.0f",
-            valueFormatter = { v -> if (v.toInt() == 0) "OFF" else "${v.toInt()}" }
+            format = "%.2f",
+            valueFormatter = { v -> if (v <= 0.001f) "OFF (0.00)" else String.format(Locale.US, "%.2f", v) }
         ) { recoil ->
-            ControlLayoutManager.setAimAntiRecoil(context, Math.round(recoil))
+            ControlLayoutManager.setAimAntiRecoilY(context, recoil)
+        }
+
+        addFloatSliderRow(
+            list,
+            label = "Horizontal Drift Comp",
+            min = -1.50f,
+            max = 1.50f,
+            step = 0.05f,
+            initial = ControlLayoutManager.getAimAntiRecoilX(context),
+            sp = sp,
+            format = "%+.2f",
+            valueFormatter = { v ->
+                when {
+                    Math.abs(v) < 0.01f -> "CENTER (0.00)"
+                    v < 0f -> String.format(Locale.US, "%.2f (Pull Left)", v)
+                    else -> String.format(Locale.US, "+%.2f (Pull Right)", v)
+                }
+            }
+        ) { drift ->
+            ControlLayoutManager.setAimAntiRecoilX(context, drift)
+        }
+
+        addFloatSliderRow(
+            list,
+            label = "Initial Kick Boost (350ms)",
+            min = 0.0f,
+            max = 1.0f,
+            step = 0.05f,
+            initial = ControlLayoutManager.getAimInitialKickBoost(context),
+            sp = sp,
+            format = "%.0f%%",
+            displayAsPercent = true
+        ) { boost ->
+            ControlLayoutManager.setAimInitialKickBoost(context, boost)
         }
         addSwitchRow(
             list,

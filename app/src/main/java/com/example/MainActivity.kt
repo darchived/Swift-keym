@@ -148,10 +148,14 @@ class MainActivity : ComponentActivity() {
         var layouts by remember { mutableStateOf(ControlLayoutManager.listLayouts(context)) }
         var activeLayoutName by remember { mutableStateOf(ControlLayoutManager.getActiveLayoutName(context)) }
         var aimSensitivity by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensitivity(context)) }
+        var adsMultiplier by remember { mutableFloatStateOf(ControlLayoutManager.getAimAdsMultiplier(context)) }
+        var stickySlowdown by remember { mutableFloatStateOf(ControlLayoutManager.getAimStickySlowdown(context)) }
         var vertDampening by remember { mutableFloatStateOf(ControlLayoutManager.getAimVertDampening(context)) }
         var speedAccelEnabled by remember { mutableStateOf(ControlLayoutManager.isAimSpeedAccelEnabled(context)) }
         var speedAccelMultiplier by remember { mutableFloatStateOf(ControlLayoutManager.getAimSpeedAccelMultiplier(context)) }
-        var antiRecoil by remember { mutableFloatStateOf(ControlLayoutManager.getAimAntiRecoil(context).toFloat()) }
+        var antiRecoilY by remember { mutableFloatStateOf(ControlLayoutManager.getAimAntiRecoilY(context)) }
+        var antiRecoilX by remember { mutableFloatStateOf(ControlLayoutManager.getAimAntiRecoilX(context)) }
+        var initialKickBoost by remember { mutableFloatStateOf(ControlLayoutManager.getAimInitialKickBoost(context)) }
         var globalOpacity by remember { mutableFloatStateOf(ControlLayoutManager.getGlobalOpacity(context)) }
         var touchRippleEnabled by remember { mutableStateOf(ControlLayoutManager.isTouchRippleEnabled(context)) }
         var gyroEnabled by remember { mutableStateOf(ControlLayoutManager.isGyroEnabled(context)) }
@@ -181,10 +185,14 @@ class MainActivity : ComponentActivity() {
             layouts = ControlLayoutManager.listLayouts(context)
             activeLayoutName = ControlLayoutManager.getActiveLayoutName(context)
             aimSensitivity = ControlLayoutManager.getAimSensitivity(context)
+            adsMultiplier = ControlLayoutManager.getAimAdsMultiplier(context)
+            stickySlowdown = ControlLayoutManager.getAimStickySlowdown(context)
             vertDampening = ControlLayoutManager.getAimVertDampening(context)
             speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
             speedAccelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
-            antiRecoil = ControlLayoutManager.getAimAntiRecoil(context).toFloat()
+            antiRecoilY = ControlLayoutManager.getAimAntiRecoilY(context)
+            antiRecoilX = ControlLayoutManager.getAimAntiRecoilX(context)
+            initialKickBoost = ControlLayoutManager.getAimInitialKickBoost(context)
             globalOpacity = ControlLayoutManager.getGlobalOpacity(context)
             touchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(context)
             gyroEnabled = ControlLayoutManager.isGyroEnabled(context)
@@ -725,6 +733,68 @@ class MainActivity : ComponentActivity() {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
+                                    text = "ADS Scope Multiplier",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = String.format(Locale.US, "%.2fx", adsMultiplier),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = adsMultiplier,
+                                onValueChange = { next ->
+                                    adsMultiplier = next
+                                    ControlLayoutManager.setAimAdsMultiplier(context, next)
+                                },
+                                valueRange = 0.30f..1.20f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Sticky Aim (Micro-Tracking)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = String.format(Locale.US, "%.2fx", stickySlowdown),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = stickySlowdown,
+                                onValueChange = { next ->
+                                    stickySlowdown = next
+                                    ControlLayoutManager.setAimStickySlowdown(context, next)
+                                },
+                                valueRange = 0.30f..0.85f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
                                     text = "Head-Level Stabilizer",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = PureWhite
@@ -813,29 +883,137 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Vertical Anti-Recoil (Sub-Pixel)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = if (antiRecoilY <= 0.001f) "OFF (0.00)" else String.format(Locale.US, "%.2f", antiRecoilY),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = PureWhite
+                                    )
+                                }
+
+                                // 1-tap quick presets
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val presets = listOf(
+                                        "Off" to 0.00f,
+                                        "Low (0.15)" to 0.15f,
+                                        "Med (0.35)" to 0.35f,
+                                        "High (0.65)" to 0.65f
+                                    )
+                                    presets.forEach { (label, value) ->
+                                        val isSelected = Math.abs(antiRecoilY - value) < 0.04f
+                                        Surface(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable {
+                                                    antiRecoilY = value
+                                                    ControlLayoutManager.setAimAntiRecoilY(context, value)
+                                                },
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isSelected) PureWhite else SurfaceElevatedGrey,
+                                            border = BorderStroke(1.dp, if (isSelected) PureWhite else BorderGrey)
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) BgDarkGrey else PureWhite,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(vertical = 6.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Slider(
+                                    value = antiRecoilY,
+                                    onValueChange = { next ->
+                                        antiRecoilY = next
+                                        ControlLayoutManager.setAimAntiRecoilY(context, next)
+                                    },
+                                    valueRange = 0.00f..3.00f,
+                                    steps = 59,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = PureWhite,
+                                        activeTrackColor = PureWhite,
+                                        inactiveTrackColor = BorderGrey
+                                    )
+                                )
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Anti-Recoil Pull-Down",
+                                    text = "Horizontal Drift Comp",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = PureWhite
                                 )
                                 Text(
-                                    text = if (antiRecoil.toInt() == 0) "OFF" else "${antiRecoil.toInt()}",
+                                    text = when {
+                                        Math.abs(antiRecoilX) < 0.01f -> "CENTER (0.00)"
+                                        antiRecoilX < 0f -> String.format(Locale.US, "%.2f (Pull Left)", antiRecoilX)
+                                        else -> String.format(Locale.US, "+%.2f (Pull Right)", antiRecoilX)
+                                    },
                                     style = MaterialTheme.typography.labelMedium,
                                     color = PureWhite
                                 )
                             }
                             Slider(
-                                value = antiRecoil,
+                                value = antiRecoilX,
                                 onValueChange = { next ->
-                                    antiRecoil = next
-                                    ControlLayoutManager.setAimAntiRecoil(context, Math.round(next))
+                                    antiRecoilX = next
+                                    ControlLayoutManager.setAimAntiRecoilX(context, next)
                                 },
-                                valueRange = 0f..20f,
+                                valueRange = -1.50f..1.50f,
+                                steps = 59,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Initial Kick Boost (350ms)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = "${Math.round(initialKickBoost * 100f)}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = initialKickBoost,
+                                onValueChange = { next ->
+                                    initialKickBoost = next
+                                    ControlLayoutManager.setAimInitialKickBoost(context, next)
+                                },
+                                valueRange = 0.0f..1.0f,
                                 steps = 19,
                                 colors = SliderDefaults.colors(
                                     thumbColor = PureWhite,

@@ -43,8 +43,21 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.6.2",
+        version = "v1.7.0",
         tag = "Latest",
+        items = listOf(
+            "Ultra-Fine Sub-Pixel Anti-Recoil (0.00–3.00 in 0.05 steps): Micro-decimal downward pull routed through the 120Hz sub-pixel float accumulator—eliminates harsh over-pulling at low settings.",
+            "1-Tap Recoil Presets: Instant switching between Off (0.00), Low / SMG (0.15), Med / AR (0.35), and High / LMG (0.65).",
+            "Horizontal Drift Compensation (-1.50 to +1.50): Counter left or right barrel drift while spraying full-auto.",
+            "Initial Kick Boost (0%–100% for first 350ms): Extra downward compensation for the initial 3–5 bullet muzzle climb.",
+            "Smart Thumb Override: Automatically subtracts manual downward thumb drag from auto-recoil pull to prevent over-pulling.",
+            "CODM-Style Sticky Aim Velocity Curve: Tunable micro-tracking friction (0.30x–0.85x) on micro thumb adjustments for precision target tracking.",
+            "Separate ADS / Scope Sensitivity Multiplier (0.30x–1.20x): Hipfire stays fast for turning while scoped aiming slows down for pinpoint accuracy."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.6.2",
+        tag = "Stable",
         items = listOf(
             "120Hz (8ms) Aim Coalescing & Sub-Pixel Accumulator: Eliminates swipe micro-stutters and AIDL IPC flooding while preserving fractional precision.",
             "Elevated Shizuku input thread priority (THREAD_PRIORITY_URGENT_DISPLAY) for zero-latency camera look.",
