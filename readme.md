@@ -4,7 +4,7 @@
 Made for cloud gamers (GeForce NOW, Moonlight, Steam Link, Parsec) who are tired of clunky virtual Xbox controllers or paywalled keymappers. Swift KeyM gives you a proper **custom mobile HUD editor** paired with a **full-time virtual mouse and keyboard** so you can play shooters like *Warzone* or sandbox games like *Minecraft Java* just like a native mobile game.
 
 > **Created by St3rlight • Team StarDevs**  
-> **Latest Release:** `v1.0.1-fixed`
+> **Latest Release:** `v1.0.2-fixed`
 
 ---
 

@@ -998,6 +998,43 @@ class FloatingSettingsDrawerView(
         }
         addDivider(list)
 
+        // VIRTUAL MOUSE PAD SETTINGS
+        addSectionHeader(list, "VIRTUAL MOUSE PAD")
+        addSwitchRow(
+            list,
+            "Virtual Mouse Pad",
+            ControlLayoutManager.isVirtualMousePadEnabled(context),
+            sp
+        ) { checked ->
+            ControlLayoutManager.setVirtualMousePadEnabled(context, checked)
+            callbacks.onGyroSettingsChanged()
+        }
+        addFloatSliderRow(
+            list,
+            label = "Virtual Mouse X Sens",
+            min = 0.2f,
+            max = 8.0f,
+            step = 0.2f,
+            initial = ControlLayoutManager.getVirtualMousePadSensX(context),
+            sp = sp,
+            format = "%.1fx"
+        ) { valX ->
+            ControlLayoutManager.setVirtualMousePadSensX(context, valX)
+        }
+        addFloatSliderRow(
+            list,
+            label = "Virtual Mouse Y Sens",
+            min = 0.2f,
+            max = 8.0f,
+            step = 0.2f,
+            initial = ControlLayoutManager.getVirtualMousePadSensY(context),
+            sp = sp,
+            format = "%.1fx"
+        ) { valY ->
+            ControlLayoutManager.setVirtualMousePadSensY(context, valY)
+        }
+        addDivider(list)
+
         // 5. CROSSHAIR & HUD
         addSectionHeader(list, "CROSSHAIR & HUD")
         addSwitchRow(list, "Center Crosshair Overlay", ControlLayoutManager.isCrosshairEnabled(context), sp) { checked ->

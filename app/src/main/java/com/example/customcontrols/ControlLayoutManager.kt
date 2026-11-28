@@ -67,6 +67,9 @@ object ControlLayoutManager {
     private const val KEY_AI_AIM_GATE_PCT = "ai_aim_gate_radius_pct"
     private const val KEY_AI_TEAM_FILTER = "ai_aim_team_filter_enabled"
     private const val KEY_AI_OCR_NAMES = "ai_aim_ocr_names_enabled"
+    private const val KEY_VIRTUAL_MOUSE_PAD_ENABLED = "virtual_mouse_pad_enabled"
+    private const val KEY_VIRTUAL_MOUSE_PAD_SENS_X = "virtual_mouse_pad_sens_x"
+    private const val KEY_VIRTUAL_MOUSE_PAD_SENS_Y = "virtual_mouse_pad_sens_y"
     private const val DIR_CONTROLMAP = "controlmap"
     private const val DIR_ICONS = "control_icons"
 
@@ -509,6 +512,41 @@ object ControlLayoutManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putFloat(KEY_GYRO_SMOOTHING, smoothing.coerceIn(0f, 1.0f))
+            .apply()
+    }
+
+    fun isVirtualMousePadEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_VIRTUAL_MOUSE_PAD_ENABLED, false)
+
+    fun setVirtualMousePadEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_VIRTUAL_MOUSE_PAD_ENABLED, enabled)
+            .apply()
+    }
+
+    fun getVirtualMousePadSensX(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_VIRTUAL_MOUSE_PAD_SENS_X, 2.0f)
+            .coerceIn(0.2f, 8.0f)
+
+    fun setVirtualMousePadSensX(context: Context, sens: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_VIRTUAL_MOUSE_PAD_SENS_X, sens.coerceIn(0.2f, 8.0f))
+            .apply()
+    }
+
+    fun getVirtualMousePadSensY(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_VIRTUAL_MOUSE_PAD_SENS_Y, 2.0f)
+            .coerceIn(0.2f, 8.0f)
+
+    fun setVirtualMousePadSensY(context: Context, sens: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_VIRTUAL_MOUSE_PAD_SENS_Y, sens.coerceIn(0.2f, 8.0f))
             .apply()
     }
 

@@ -122,6 +122,12 @@ class OverlayService : Service() {
     private var aimZoneParams: WindowManager.LayoutParams? = null
     private var isAimEnabled = false
 
+    // Virtual Mouse Pad widget (user-controlled touch trackpad)
+    private var virtualMousePadView: VirtualMousePadView? = null
+    private var virtualMousePadParams: WindowManager.LayoutParams? = null
+    private var isVirtualMousePadEnabled = false
+    private var virtualMouseToggleBtn: ImageButton? = null
+
     // Top-layer floating bar (Gyro Toggle, Undo, Cogwheel, Redo)
     private var topBarRoot: LinearLayout? = null
     private var topBarParams: WindowManager.LayoutParams? = null
@@ -389,6 +395,7 @@ class OverlayService : Service() {
             }
             ACTION_UPDATE_GYRO -> {
                 syncGyroSettingsFromPrefs()
+                syncVirtualMousePadFromPrefs()
                 return START_STICKY
             }
             ACTION_UPDATE_CROSSHAIR -> {
@@ -432,6 +439,7 @@ class OverlayService : Service() {
             updateScreenDimensions()
             // Layer 1 (Bottom): Toggleable Aim Swipe Zone (OFF by default)
             setupAimSwipeZoneWindow()
+            setupVirtualMousePadWindow()
             // Layer 2 (Middle): Individual Control Windows via ControlLayout WindowOverlayHost
             setupDetachedControlLayout()
             // Layer 3 (Visual-Only Non-Touchable): Center Crosshair & Touch Ripple windows
@@ -532,6 +540,76 @@ class OverlayService : Service() {
         aimZoneView = zone
         aimZoneParams = params
         windowManager.addView(zone, params)
+    }
+
+    private fun setupVirtualMousePadWindow() {
+        val padWidth = ControlUtils.dpToPx(this, 220f).toInt()
+        val padHeight = ControlUtils.dpToPx(this, 180f).toInt()
+        val params = WindowManager.LayoutParams(
+            padWidth,
+            padHeight,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = ControlUtils.dpToPx(this@OverlayService, 40f).toInt()
+            y = screenHeightPx / 2 - padHeight / 2
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        val pad = VirtualMousePadView(this, windowManager, params).apply {
+            onKeepAlive = {
+                aimZoneView?.postKeepAlive()
+            }
+        }
+        pad.visibility = View.GONE
+        virtualMousePadView = pad
+        virtualMousePadParams = params
+        windowManager.addView(pad, params)
+        syncVirtualMousePadFromPrefs()
+    }
+
+    private fun syncVirtualMousePadFromPrefs() {
+        val enabled = ControlLayoutManager.isVirtualMousePadEnabled(this)
+        isVirtualMousePadEnabled = enabled
+        val pad = virtualMousePadView ?: return
+        val params = virtualMousePadParams ?: return
+        val actuallyVisible = enabled && !isHudHidden
+        val padWidth = ControlUtils.dpToPx(this, 220f).toInt()
+        val padHeight = ControlUtils.dpToPx(this, 180f).toInt()
+        if (actuallyVisible) {
+            params.width = padWidth
+            params.height = padHeight
+            params.flags = BASE_WINDOW_FLAGS
+            pad.visibility = View.VISIBLE
+        } else {
+            params.width = 0
+            params.height = 0
+            params.flags = BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            pad.visibility = View.GONE
+        }
+        if (pad.isAttachedToWindow) {
+            try {
+                windowManager.updateViewLayout(pad, params)
+            } catch (_: Throwable) {}
+        }
+        virtualMouseToggleBtn?.let { styleChipToggleButton(it, enabled) }
+        updateLiveHudPill()
+    }
+
+    private fun toggleVirtualMousePad() {
+        if (isHudHidden) return
+        val next = !ControlLayoutManager.isVirtualMousePadEnabled(this)
+        ControlLayoutManager.setVirtualMousePadEnabled(this, next)
+        syncVirtualMousePadFromPrefs()
+        Toast.makeText(
+            this,
+            if (next) "Virtual Mouse Pad ON" else "Virtual Mouse Pad OFF",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun setupDetachedControlLayout() {
@@ -824,7 +902,20 @@ class OverlayService : Service() {
         val gyroLp = LinearLayout.LayoutParams(btnSz, btnSz).apply {
             marginEnd = ControlUtils.dpToPx(this@OverlayService, 4f).toInt()
         }
+        val vMouseBtn = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_crosshair)
+            contentDescription = "Toggle Virtual Mouse Pad"
+            val p = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
+            setPadding(p, p, p, p)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnClickListener { toggleVirtualMousePad() }
+            setOnTouchListener(dragListener)
+        }
+        virtualMouseToggleBtn = vMouseBtn
+        styleChipToggleButton(vMouseBtn, ControlLayoutManager.isVirtualMousePadEnabled(this))
+
         bar.addView(gyroBtn, gyroLp)
+        bar.addView(vMouseBtn, gyroLp)
         bar.addView(undoBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.addView(cogBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.addView(keyboardBtn, LinearLayout.LayoutParams(btnSz, btnSz))
@@ -1340,6 +1431,7 @@ class OverlayService : Service() {
             setChromeWindowVisible(topBarRoot, topBarParams, false)
             setChromeWindowVisible(quickAimButton, quickAimParams, false)
             setChromeWindowVisible(liveHudPillRoot, liveHudPillParams, false)
+            setChromeWindowVisible(virtualMousePadView, virtualMousePadParams, false)
             eyeButton?.setImageResource(R.drawable.ic_eye_off)
         } else {
             // Restore individual control windows according to their logical visibility
@@ -1350,6 +1442,7 @@ class OverlayService : Service() {
 
             setChromeWindowVisible(topBarRoot, topBarParams, true)
             setChromeWindowVisible(quickAimButton, quickAimParams, true)
+            syncVirtualMousePadFromPrefs()
             updateLiveHudPill()
             eyeButton?.setImageResource(R.drawable.ic_eye_open)
             gyroController?.paused = hud.isModifiable
