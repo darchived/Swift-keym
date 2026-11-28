@@ -12,7 +12,7 @@ import com.example.customcontrols.utils.ControlUtils
 class FovCircleOverlayView(context: Context) : View(context) {
 
     private val fovPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x55FFFFFF.toInt() // crisp translucent white FOV circle
+        color = 0x55FFFFFF.toInt()
         style = Paint.Style.STROKE
         strokeWidth = ControlUtils.dpToPx(context, 1.5f)
     }
@@ -27,9 +27,9 @@ class FovCircleOverlayView(context: Context) : View(context) {
         val h = height.toFloat()
         val cx = w / 2f
         val cy = h / 2f
-        val radius = minOf(w, h) * ControlLayoutManager.getAiCrosshairGatePct(context)
+        val radiusPx = ControlLayoutManager.getAiFovRadiusPx(context)
 
-        canvas.drawCircle(cx, cy, radius, fovPaint)
+        canvas.drawCircle(cx, cy, radiusPx, fovPaint)
         canvas.drawCircle(cx, cy, 3f, centerDotPaint)
     }
 }

@@ -218,7 +218,9 @@ class AiAimVisionAnalyzer(
 
         val centerX = w * 0.5f
         val centerY = h * 0.5f
-        val gateRadiusPx = min(w, h) * gatePct
+        val fovRadiusPx = ControlLayoutManager.getAiFovRadiusPx(context)
+        val captureScale = w.toFloat() / 1080f
+        val gateRadiusPx = fovRadiusPx * captureScale.coerceIn(0.5f, 2.5f)
 
         var teammatesSkipped = 0
         var bestEnemy: CandidateBox? = null

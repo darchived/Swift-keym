@@ -67,6 +67,8 @@ object ControlLayoutManager {
     private const val KEY_AI_AIM_GATE_PCT = "ai_aim_gate_radius_pct"
     private const val KEY_AI_TEAM_FILTER = "ai_aim_team_filter_enabled"
     private const val KEY_AI_OCR_NAMES = "ai_aim_ocr_names_enabled"
+    private const val KEY_AI_FOV_RADIUS_PX = "ai_fov_radius_px"
+    private const val KEY_AI_FOV_CIRCLE_VISIBLE = "ai_fov_circle_visible"
     private const val KEY_VIRTUAL_MOUSE_PAD_ENABLED = "virtual_mouse_pad_enabled"
     private const val KEY_VIRTUAL_MOUSE_PAD_SENS_X = "virtual_mouse_pad_sens_x"
     private const val KEY_VIRTUAL_MOUSE_PAD_SENS_Y = "virtual_mouse_pad_sens_y"
@@ -850,6 +852,29 @@ object ControlLayoutManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putFloat(KEY_AI_AIM_GATE_PCT, pct.coerceIn(0.10f, 0.40f))
+            .apply()
+    }
+
+    fun getAiFovRadiusPx(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AI_FOV_RADIUS_PX, 120f)
+            .coerceIn(1f, 250f)
+
+    fun setAiFovRadiusPx(context: Context, radius: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AI_FOV_RADIUS_PX, radius.coerceIn(1f, 250f))
+            .apply()
+    }
+
+    fun isAiFovCircleVisible(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AI_FOV_CIRCLE_VISIBLE, true)
+
+    fun setAiFovCircleVisible(context: Context, visible: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AI_FOV_CIRCLE_VISIBLE, visible)
             .apply()
     }
 

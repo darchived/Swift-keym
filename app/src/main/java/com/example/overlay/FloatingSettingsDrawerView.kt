@@ -856,6 +856,30 @@ class FloatingSettingsDrawerView(
             ControlLayoutManager.setAiTeamFilterEnabled(context, checked)
         }
 
+        addFloatSliderRow(
+            list,
+            label = "FOV Circle Radius",
+            min = 10f,
+            max = 250f,
+            step = 5f,
+            initial = ControlLayoutManager.getAiFovRadiusPx(context),
+            sp = sp,
+            format = "%.0f px"
+        ) { radius ->
+            ControlLayoutManager.setAiFovRadiusPx(context, radius)
+            callbacks.onAimProfileUpdated()
+        }
+
+        addSwitchRow(
+            list,
+            "Show FOV Circle Overlay",
+            ControlLayoutManager.isAiFovCircleVisible(context),
+            sp
+        ) { checked ->
+            ControlLayoutManager.setAiFovCircleVisible(context, checked)
+            callbacks.onAimProfileUpdated()
+        }
+
         // Compact Live AI Vision Terminal directly below AI Aim Assist controls
         val termBox = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL

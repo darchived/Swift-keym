@@ -720,7 +720,8 @@ class OverlayService : Service() {
         val view = fovCircleView ?: return
         val params = fovCircleParams ?: return
         val aiStrength = ControlLayoutManager.getAiAimStrength(this)
-        val enabled = aiStrength >= 0.5f && !isHudHidden
+        val fovVisible = ControlLayoutManager.isAiFovCircleVisible(this)
+        val enabled = aiStrength >= 0.5f && fovVisible && !isHudHidden
         view.visibility = if (enabled) View.VISIBLE else View.GONE
         params.flags = BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         if (view.isAttachedToWindow) {
