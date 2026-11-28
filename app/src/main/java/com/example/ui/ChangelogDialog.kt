@@ -1,5 +1,9 @@
 package com.example.ui
 
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,16 +21,24 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
+import com.example.input.ShizukuHelper
 import com.example.ui.theme.BgDarkGrey
 import com.example.ui.theme.BorderGrey
 import com.example.ui.theme.MutedGrey
@@ -34,6 +46,10 @@ import com.example.ui.theme.PureWhite
 import com.example.ui.theme.SoftWhite
 import com.example.ui.theme.SurfaceElevatedGrey
 import com.example.ui.theme.SurfaceGrey
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 private data class ChangelogRelease(
     val version: String,
@@ -43,8 +59,20 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
+        version = "v1.0.0-Released",
+        tag = "Official Release",
+        items = listOf(
+            "Play Protect & Restricted Settings Hardening: Non-debuggable production release build, zero internet/storage/install permissions, Privacy & Safety Transparency sheet, and Shizuku self-update installer (pm install -i com.android.vending).",
+            "Per-App Game Library & Auto-Switch Hub: Link installed games to specific .json HUD presets, launch with 1 tap, and optionally auto-hide the overlay outside the game.",
+            "SKM1:// Share Codes & Full .skm Backup Bundles: Export or import all presets, macros, game links, and aim/gyro settings cleanly.",
+            "Advanced Controls & Live HUD Pill: Snap-to-grid + alignment guides (Snap All / Center H & V), Layer Shift (Fn), Dual-Action Tap/Hold, 8-Way Radial Quick Wheel, Scroll Wheel Strip, Free-Look button, Quick 90°/180° turns, Auto-Sprint badge, Edge-Guard bezel rejection, and Live Input HUD Pill with ⚡ Release All Keys.",
+            "Pro Aiming & 3-Stage Anti-Recoil Engine: Per-axis Sens X & Y, Scope Zoom levels (1x / 2x–4x / 6x+), smooth ADS transition ramp, optional Inertia Glide, Touch-to-Gyro Hybrid Blending, Dual Weapon Slots (G1/G2 auto-switched by 1/2), 3-Stage Timeline Recoil (Early/Mid/Late + Drift X), and Interactive Live Recoil Test Pad.",
+            "Pro Macro & Combo Builder: Live recorder, On-Press & On-Release sequence editor, ADS/Sprint conditions, rapid-fire loops with ±humanizer jitter, cooldowns, interrupt cancellation, dry-run step debugger, and macro JSON export/import."
+        )
+    ),
+    ChangelogRelease(
         version = "v1.8.0",
-        tag = "Latest",
+        tag = "Legacy",
         items = listOf(
             "Fixed Aim Zone Camera Jump Bug: Zero movement on ACTION_DOWN/ACTION_POINTER_DOWN, 3px touch slop filter (stationary taps move camera by 0), full accumulator & pointer reset on lift, and pure EV_REL mouse verification.",
             "Draggable Floating QWERTY Keyboard: Added Top Drag Header Bar (⠿ Drag Keyboard / ✕ Close) so you can move the virtual keyboard anywhere on screen with saved position persistence.",
@@ -154,6 +182,47 @@ private val CHANGELOG_RELEASES = listOf(
 
 @Composable
 fun ChangelogDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var updateStatus by remember { mutableStateOf<String?>(null) }
+
+    val apkPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (!ShizukuHelper.isShizukuAvailable() || !ShizukuHelper.hasPermission()) {
+            Toast.makeText(context, "Authorize Shizuku first to self-update.", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
+        updateStatus = "Staging APK & running pm install via Shizuku..."
+        scope.launch {
+            val outFile = withContext(Dispatchers.IO) {
+                val baseDir = context.externalCacheDir ?: context.cacheDir
+                val target = File(baseDir, "swiftkeym_update.apk")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                target
+            }
+            ShizukuHelper.executeShellCommandAsync(
+                context,
+                "pm install -i com.android.vending -r \"${outFile.absolutePath}\""
+            ) { result ->
+                updateStatus = if (result.isSuccess) {
+                    "✓ Installed with Play-store attribution (restricted settings bypassed)."
+                } else {
+                    "Install failed (${result.exitCode}): ${result.output}"
+                }
+            }
+        }
+    }
+
+    val versionLabel = if (BuildConfig.VERSION_NAME.startsWith("v")) {
+        BuildConfig.VERSION_NAME
+    } else {
+        "v${BuildConfig.VERSION_NAME}"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SurfaceGrey,
@@ -176,7 +245,7 @@ fun ChangelogDialog(onDismiss: () -> Unit) {
                         border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.6f))
                     ) {
                         Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
+                            text = versionLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = PureWhite,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -194,10 +263,45 @@ fun ChangelogDialog(onDismiss: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 360.dp)
+                    .heightIn(max = 390.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = BgDarkGrey,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                apkPickerLauncher.launch(arrayOf("application/vnd.android.package-archive", "*/*"))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.6f))
+                        ) {
+                            Text(
+                                text = "Self-Update via Shizuku (Bypass Restricted Settings)",
+                                color = PureWhite,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        if (!updateStatus.isNullOrBlank()) {
+                            Text(
+                                text = updateStatus ?: "",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SoftWhite
+                            )
+                        }
+                    }
+                }
+
                 CHANGELOG_RELEASES.forEach { release ->
                     Column(
                         modifier = Modifier

@@ -208,6 +208,129 @@ public class EditControlSideDialog {
                 data.macroSequential = checked;
                 parentLayout.notifyLayoutModified();
             });
+
+            // v1.0.0 Advanced Action Modes
+            addSectionLabel(body, "v1.0.0 Pro Control Modes");
+            EditText secNameInput = createInputField(data.secondaryName, InputType.TYPE_CLASS_TEXT);
+            secNameInput.setHint("Fn / Long-Press Label");
+            secNameInput.addTextChangedListener(new SimpleTextWatcher(s -> {
+                data.secondaryName = s;
+                target.updateProperties();
+            }));
+            body.addView(secNameInput);
+
+            Button secSlotBtn = createSecondarySlotButton(data);
+            LinearLayout.LayoutParams ssLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (int) ControlUtils.dpToPx(context, 38f)
+            );
+            ssLp.topMargin = (int) ControlUtils.dpToPx(context, 6f);
+            secSlotBtn.setLayoutParams(ssLp);
+            body.addView(secSlotBtn);
+
+            addSwitchRow(body, "Layer Shift Modifier (Fn Key)", data.isLayerShiftKey, checked -> {
+                data.isLayerShiftKey = checked;
+                parentLayout.notifyLayoutModified();
+            });
+            addSwitchRow(body, "Dual-Action (Tap vs 300ms Hold)", data.dualActionEnabled, checked -> {
+                data.dualActionEnabled = checked;
+                parentLayout.notifyLayoutModified();
+            });
+            addSwitchRow(body, "8-Way Radial Quick Wheel", data.isRadialWheel, checked -> {
+                data.isRadialWheel = checked;
+                parentLayout.notifyLayoutModified();
+            });
+            Button radialEditBtn = createFlatRowButton("Configure 8 Radial Slices (N..NW)", 0xFFFFFFFF);
+            LinearLayout.LayoutParams radLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (int) ControlUtils.dpToPx(context, 36f)
+            );
+            radLp.topMargin = (int) ControlUtils.dpToPx(context, 4f);
+            radialEditBtn.setLayoutParams(radLp);
+            radialEditBtn.setOnClickListener(v -> showRadialSlicePicker(data));
+            body.addView(radialEditBtn);
+            addSwitchRow(body, "Virtual Scroll Wheel Strip", data.isScrollStrip, checked -> {
+                data.isScrollStrip = checked;
+                parentLayout.notifyLayoutModified();
+            });
+            addSwitchRow(body, "Free-Look Button (Head Turn)", data.isFreeLookButton, checked -> {
+                data.isFreeLookButton = checked;
+                parentLayout.notifyLayoutModified();
+            });
+
+            // Quick Turn (Off / 90° / 180°)
+            addSectionLabel(body, "Quick Turn Snap");
+            int qtSel = data.quickTurnDegrees == 90 ? 1 : (data.quickTurnDegrees == 180 ? 2 : 0);
+            LinearLayout qtRow = new LinearLayout(context);
+            qtRow.setOrientation(LinearLayout.HORIZONTAL);
+            String[] qtLabels = new String[]{"Off", "90° Turn", "180° Flip"};
+            Button[] qtChips = new Button[3];
+            for (int i = 0; i < 3; i++) {
+                final int pos = i;
+                Button chip = new Button(context);
+                chip.setText(qtLabels[i]);
+                chip.setAllCaps(false);
+                chip.setTextSize(10.5f);
+                chip.setTypeface(Typeface.DEFAULT_BOLD);
+                chip.setMinWidth(0);
+                chip.setMinHeight(0);
+                chip.setStateListAnimator(null);
+                LinearLayout.LayoutParams qLp = new LinearLayout.LayoutParams(0, (int) ControlUtils.dpToPx(context, 30f), 1f);
+                if (i < 2) qLp.setMarginEnd((int) ControlUtils.dpToPx(context, 4f));
+                chip.setLayoutParams(qLp);
+                styleOrientChip(chip, i == qtSel);
+                chip.setOnClickListener(v -> {
+                    for (int j = 0; j < 3; j++) styleOrientChip(qtChips[j], j == pos);
+                    data.quickTurnDegrees = pos == 1 ? 90 : (pos == 2 ? 180 : 0);
+                    parentLayout.notifyLayoutModified();
+                });
+                qtChips[i] = chip;
+                qtRow.addView(chip);
+            }
+            body.addView(qtRow);
+
+            // Macro Linker Row
+            addSectionLabel(body, "Linked Pro Macro");
+            String currentMacroLabel = "None";
+            java.util.List<com.example.input.MacroDefinition> savedMacros = ControlLayoutManager.INSTANCE.getMacros(context);
+            for (com.example.input.MacroDefinition m : savedMacros) {
+                if (m.getId().equals(data.macroId)) {
+                    currentMacroLabel = "Macro: " + m.getName();
+                    break;
+                }
+            }
+            Button macroBtn = createFlatRowButton(currentMacroLabel + " (Tap to Cycle)", 0xFFFFFFFF);
+            LinearLayout.LayoutParams mbLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (int) ControlUtils.dpToPx(context, 38f)
+            );
+            mbLp.topMargin = (int) ControlUtils.dpToPx(context, 4f);
+            macroBtn.setLayoutParams(mbLp);
+            macroBtn.setOnClickListener(v -> {
+                java.util.List<com.example.input.MacroDefinition> macros = ControlLayoutManager.INSTANCE.getMacros(context);
+                if (macros.isEmpty()) {
+                    Toast.makeText(context, "Create macros in Home -> Pro Macro Builder first.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                int curIdx = -1;
+                for (int i = 0; i < macros.size(); i++) {
+                    if (macros.get(i).getId().equals(data.macroId)) {
+                        curIdx = i;
+                        break;
+                    }
+                }
+                int nextIdx = curIdx + 1;
+                if (nextIdx >= macros.size()) {
+                    data.macroId = "";
+                    macroBtn.setText("None (Tap to Cycle)");
+                } else {
+                    com.example.input.MacroDefinition chosen = macros.get(nextIdx);
+                    data.macroId = chosen.getId();
+                    macroBtn.setText("Macro: " + chosen.getName() + " (Tap to Cycle)");
+                }
+                parentLayout.notifyLayoutModified();
+            });
+            body.addView(macroBtn);
         }
 
         // Drawer-specific orientation & + Add Sub-Button
@@ -469,6 +592,100 @@ public class EditControlSideDialog {
             }).show();
         });
         return slotBtn;
+    }
+
+    private Button createSecondarySlotButton(ControlData data) {
+        if (data.secondaryKeycodes == null || data.secondaryKeycodes.length < 4) {
+            data.secondaryKeycodes = new int[]{0, 0, 0, 0};
+        }
+        Button slotBtn = new Button(context);
+        slotBtn.setAllCaps(false);
+        slotBtn.setTextSize(11f);
+        slotBtn.setTextColor(0xFFFFFFFF);
+        slotBtn.setBackgroundResource(R.drawable.bg_input_field);
+        int code = data.secondaryKeycodes[0];
+        String keyLabel = code == 0 ? "NONE" : LwjglGlfwKeycode.getKeyName(code).toUpperCase(Locale.US);
+        slotBtn.setText("Fn / Hold Bind: " + keyLabel);
+        slotBtn.setOnClickListener(v -> {
+            new VisualBindPickerDialog(context, isOverlayWindow, (selectedCode, label) -> {
+                data.secondaryKeycodes[0] = selectedCode;
+                String nextLbl = selectedCode == 0 ? "NONE" : label.toUpperCase(Locale.US);
+                slotBtn.setText("Fn / Hold Bind: " + nextLbl);
+                if (data.secondaryName == null || data.secondaryName.isEmpty()) {
+                    data.secondaryName = selectedCode == 0 ? "" : label;
+                }
+                target.updateProperties();
+                parentLayout.notifyLayoutModified();
+            }).show();
+        });
+        return slotBtn;
+    }
+
+    private void showRadialSlicePicker(ControlData data) {
+        data.ensureValid();
+        final int[] selectedSlice = new int[]{0};
+        String[] compass = new String[]{"Top (0)", "Top-R (1)", "Right (2)", "Bot-R (3)", "Bot (4)", "Bot-L (5)", "Left (6)", "Top-L (7)"};
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) ControlUtils.dpToPx(context, 12f);
+        card.setPadding(pad, pad, pad, pad);
+        card.setBackgroundColor(0xFF222222);
+
+        TextView title = new TextView(context);
+        title.setText("Radial Wheel Slice Editor");
+        title.setTextColor(0xFFFFFFFF);
+        title.setTextSize(14f);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(title);
+
+        Button sliceBtn = createFlatRowButton("", 0xFFFFFFFF);
+        Button bindBtn = createFlatRowButton("", 0xFFFFFFFF);
+
+        Runnable refreshLabels = () -> {
+            int idx = selectedSlice[0];
+            int kc = data.radialKeycodes[idx];
+            String kName = kc == 0 ? "UNBOUND" : LwjglGlfwKeycode.getKeyName(kc).toUpperCase(Locale.US);
+            sliceBtn.setText("Slice: " + compass[idx] + "  (Tap to Next)");
+            bindBtn.setText("Bind: " + kName + " [Label: " + data.radialLabels[idx] + "]  (Tap to Change)");
+        };
+        refreshLabels.run();
+
+        sliceBtn.setOnClickListener(v -> {
+            selectedSlice[0] = (selectedSlice[0] + 1) % 8;
+            refreshLabels.run();
+        });
+        bindBtn.setOnClickListener(v -> {
+            new VisualBindPickerDialog(context, isOverlayWindow, (code, label) -> {
+                int idx = selectedSlice[0];
+                data.radialKeycodes[idx] = code;
+                data.radialLabels[idx] = code == 0 ? "-" : label;
+                refreshLabels.run();
+                parentLayout.notifyLayoutModified();
+            }).show();
+        });
+
+        LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (int) ControlUtils.dpToPx(context, 40f)
+        );
+        bLp.topMargin = (int) ControlUtils.dpToPx(context, 8f);
+        sliceBtn.setLayoutParams(bLp);
+        bindBtn.setLayoutParams(bLp);
+        card.addView(sliceBtn);
+        card.addView(bindBtn);
+
+        Button doneBtn = createFlatRowButton("Close Slice Editor", 0xFFFFFFFF);
+        doneBtn.setLayoutParams(bLp);
+        doneBtn.setOnClickListener(v -> show());
+        card.addView(doneBtn);
+
+        windowHost.setContentView(
+                card,
+                (int) ControlUtils.dpToPx(context, 310f),
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.END | Gravity.CENTER_VERTICAL,
+                true
+        );
     }
 
     private EditText createInputField(String initial, int inputType) {

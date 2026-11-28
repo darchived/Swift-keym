@@ -16,8 +16,8 @@ android {
     applicationId = "com.stardevs.swiftkeym"
     minSdk = 26
     targetSdk = 34
-    versionCode = 11
-    versionName = "1.8.0"
+    versionCode = 100
+    versionName = "v1.0.0-Released"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -42,6 +42,7 @@ android {
 
   buildTypes {
     release {
+      isDebuggable = false
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

@@ -1,14 +1,24 @@
 package com.example.overlay
 
+import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -28,6 +38,7 @@ import com.example.customcontrols.ControlJoystickData
 import com.example.customcontrols.ControlLayout
 import com.example.customcontrols.ControlLayoutManager
 import com.example.customcontrols.CustomControls
+import com.example.customcontrols.ShareBackupManager
 import com.example.customcontrols.utils.ControlUtils
 import com.example.input.LwjglGlfwKeycode
 import java.util.Locale
@@ -51,6 +62,8 @@ class FloatingSettingsDrawerView(
         fun onToggleHideHud()
         fun onToggleKeyboard()
         fun onAimSensitivitySet(sensitivity: Float)
+        fun onAimProfileUpdated()
+        fun onReleaseAllKeysPanic()
         fun onGyroSettingsChanged()
         fun onCrosshairSettingsChanged()
         fun onHapticToggled(enabled: Boolean)
@@ -58,6 +71,12 @@ class FloatingSettingsDrawerView(
         fun onExportControlMap()
         fun onStopServiceConfirmed()
         fun onDrawerVisibilityChanged(visible: Boolean)
+    }
+
+    fun refreshRecoilSlotUi() {
+        if (isShowing && currentPage == Page.MAIN) {
+            refreshContent(Page.MAIN)
+        }
     }
 
     private enum class Page {
@@ -251,7 +270,8 @@ class FloatingSettingsDrawerView(
             typeface = Typeface.DEFAULT_BOLD
         })
         titleCol.addView(TextView(context).apply {
-            text = "v${BuildConfig.VERSION_NAME} • StarDevs"
+            val ver = if (BuildConfig.VERSION_NAME.startsWith("v")) BuildConfig.VERSION_NAME else "v${BuildConfig.VERSION_NAME}"
+            text = "$ver • StarDevs"
             setTextColor(0xFFA8A8A8.toInt())
             textSize = 10.5f
         })
@@ -334,6 +354,30 @@ class FloatingSettingsDrawerView(
             histRow.addView(undoBtn, h1)
             histRow.addView(redoBtn, h2)
             list.addView(histRow)
+
+            addSwitchRow(list, "Snap-to-Grid & Guides", controlLayout.isSnapToGridEnabled, sp) { checked ->
+                controlLayout.isSnapToGridEnabled = checked
+                ControlLayoutManager.setSnapToGridEnabled(context, checked)
+                callbacks.onAimProfileUpdated()
+            }
+            val alignRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, sp)
+            }
+            val alignGap = ControlUtils.dpToPx(context, 4f).toInt()
+            val snapAllBtn = createPillButton("Snap All", 0xFF333333.toInt(), 0xFFFFFFFF.toInt()).apply {
+                setOnClickListener { controlLayout.snapAllToGrid() }
+            }
+            val centerHBtn = createPillButton("Center H", 0xFF333333.toInt(), 0xFFFFFFFF.toInt()).apply {
+                setOnClickListener { controlLayout.centerSelectedHorizontally() }
+            }
+            val centerVBtn = createPillButton("Center V", 0xFF333333.toInt(), 0xFFFFFFFF.toInt()).apply {
+                setOnClickListener { controlLayout.centerSelectedVertically() }
+            }
+            alignRow.addView(snapAllBtn, LinearLayout.LayoutParams(0, ControlUtils.dpToPx(context, 32f).toInt(), 1f).apply { marginEnd = alignGap })
+            alignRow.addView(centerHBtn, LinearLayout.LayoutParams(0, ControlUtils.dpToPx(context, 32f).toInt(), 1f).apply { marginEnd = alignGap })
+            alignRow.addView(centerVBtn, LinearLayout.LayoutParams(0, ControlUtils.dpToPx(context, 32f).toInt(), 1f))
+            list.addView(alignRow)
         }
 
         // Quick Add Row (+ Button / + Drawer / + Joystick)
@@ -423,17 +467,40 @@ class FloatingSettingsDrawerView(
         }
         addFloatSliderRow(
             list,
-            label = "Aim Sensitivity",
+            label = "Horizontal Aim Sens (X)",
             min = 0.2f,
             max = 5.0f,
             step = 0.1f,
-            initial = controlLayout.aimSensitivity,
+            initial = ControlLayoutManager.getAimSensX(context),
             sp = sp,
             format = "%.1fx"
         ) { value ->
             controlLayout.aimSensitivity = value
             ControlLayoutManager.setAimSensitivity(context, value)
-            callbacks.onAimSensitivitySet(value)
+            ControlLayoutManager.setAimSensX(context, value)
+            callbacks.onAimProfileUpdated()
+        }
+        addFloatSliderRow(
+            list,
+            label = "Vertical Aim Sens (Y)",
+            min = 0.2f,
+            max = 5.0f,
+            step = 0.1f,
+            initial = ControlLayoutManager.getAimSensY(context),
+            sp = sp,
+            format = "%.1fx"
+        ) { value ->
+            ControlLayoutManager.setAimSensY(context, value)
+            callbacks.onAimProfileUpdated()
+        }
+        addChipSelectorRow(
+            list,
+            labels = arrayOf("Scope 1x", "2x–4x", "6x+"),
+            selectedIndex = ControlLayoutManager.getAimZoomLevel(context),
+            sp = sp
+        ) { idx ->
+            ControlLayoutManager.setAimZoomLevel(context, idx)
+            callbacks.onAimProfileUpdated()
         }
         addFloatSliderRow(
             list,
@@ -446,6 +513,18 @@ class FloatingSettingsDrawerView(
             format = "%.2fx"
         ) { mult ->
             ControlLayoutManager.setAimAdsMultiplier(context, mult)
+        }
+        addFloatSliderRow(
+            list,
+            label = "ADS Ramp Smooth",
+            min = 0f,
+            max = 250f,
+            step = 10f,
+            initial = ControlLayoutManager.getAimAdsRampMs(context).toFloat(),
+            sp = sp,
+            format = "%.0fms"
+        ) { ms ->
+            ControlLayoutManager.setAimAdsRampMs(context, ms.toInt())
         }
         addFloatSliderRow(
             list,
@@ -472,6 +551,31 @@ class FloatingSettingsDrawerView(
         ) { dampening ->
             ControlLayoutManager.setAimVertDampening(context, dampening)
         }
+        addFloatSliderRow(
+            list,
+            label = "Aim Inertia Glide",
+            min = 0f,
+            max = 0.85f,
+            step = 0.05f,
+            initial = ControlLayoutManager.getAimInertia(context),
+            sp = sp,
+            format = "%.0f%%",
+            displayAsPercent = true
+        ) { inertia ->
+            ControlLayoutManager.setAimInertia(context, inertia)
+        }
+        addFloatSliderRow(
+            list,
+            label = "Edge-Guard Bezel Margin",
+            min = 0f,
+            max = 20f,
+            step = 1f,
+            initial = ControlLayoutManager.getAimEdgeGuardDp(context).toFloat(),
+            sp = sp,
+            format = "%.0fdp"
+        ) { dp ->
+            ControlLayoutManager.setAimEdgeGuardDp(context, dp.toInt())
+        }
         addSwitchRow(
             list,
             "Speed Acceleration",
@@ -493,13 +597,40 @@ class FloatingSettingsDrawerView(
             ControlLayoutManager.setAimSpeedAccelMultiplier(context, mult)
         }
 
-        // Anti-Recoil Quick Presets (1-tap row)
-        val currentRecoilY = ControlLayoutManager.getAimAntiRecoilY(context)
+        addDivider(list)
+        val activeSlot = ControlLayoutManager.getActiveRecoilSlot(context)
+        addSectionHeader(list, "3-STAGE ANTI-RECOIL (SLOT G$activeSlot)")
+
+        addChipSelectorRow(
+            list,
+            labels = arrayOf("Weapon 1 (G1)", "Weapon 2 (G2)"),
+            selectedIndex = activeSlot - 1,
+            sp = sp
+        ) { idx ->
+            ControlLayoutManager.setActiveRecoilSlot(context, idx + 1)
+            callbacks.onAimProfileUpdated()
+            refreshContent(Page.MAIN)
+        }
+
+        addSwitchRow(
+            list,
+            "Only Compensate While ADS",
+            ControlLayoutManager.isRecoilAdsOnly(context),
+            sp
+        ) { checked ->
+            ControlLayoutManager.setRecoilAdsOnly(context, checked)
+        }
+
+        val earlyY = ControlLayoutManager.getRecoilEarlyY(context, activeSlot)
+        val midY = ControlLayoutManager.getRecoilMidY(context, activeSlot)
+        val lateY = ControlLayoutManager.getRecoilLateY(context, activeSlot)
+        val driftX = ControlLayoutManager.getRecoilDriftX(context, activeSlot)
+
         val recoilPresetIdx = when {
-            currentRecoilY <= 0.001f -> 0
-            Math.abs(currentRecoilY - 0.15f) < 0.04f -> 1
-            Math.abs(currentRecoilY - 0.35f) < 0.04f -> 2
-            Math.abs(currentRecoilY - 0.65f) < 0.04f -> 3
+            earlyY <= 0.001f -> 0
+            Math.abs(earlyY - 0.15f) < 0.04f -> 1
+            Math.abs(earlyY - 0.35f) < 0.04f -> 2
+            Math.abs(earlyY - 0.65f) < 0.04f -> 3
             else -> -1
         }
         addChipSelectorRow(
@@ -508,29 +639,58 @@ class FloatingSettingsDrawerView(
             selectedIndex = recoilPresetIdx,
             sp = sp
         ) { idx ->
-            val presetVal = when (idx) {
-                0 -> 0.00f
+            val v = when (idx) {
                 1 -> 0.15f
                 2 -> 0.35f
                 3 -> 0.65f
                 else -> 0.00f
             }
-            ControlLayoutManager.setAimAntiRecoilY(context, presetVal)
+            ControlLayoutManager.setRecoilEarlyY(context, activeSlot, v)
+            ControlLayoutManager.setRecoilMidY(context, activeSlot, (v * 0.90f))
+            ControlLayoutManager.setRecoilLateY(context, activeSlot, (v * 0.75f))
             refreshContent(Page.MAIN)
         }
 
         addFloatSliderRow(
             list,
-            label = "Vertical Anti-Recoil",
+            label = "Stage 1 Early (0–350ms)",
             min = 0.00f,
             max = 3.00f,
             step = 0.05f,
-            initial = currentRecoilY,
+            initial = earlyY,
             sp = sp,
             format = "%.2f",
-            valueFormatter = { v -> if (v <= 0.001f) "OFF (0.00)" else String.format(Locale.US, "%.2f", v) }
-        ) { recoil ->
-            ControlLayoutManager.setAimAntiRecoilY(context, recoil)
+            valueFormatter = { v -> if (v <= 0.001f) "OFF" else String.format(Locale.US, "%.2f", v) }
+        ) { v ->
+            ControlLayoutManager.setRecoilEarlyY(context, activeSlot, v)
+        }
+
+        addFloatSliderRow(
+            list,
+            label = "Stage 2 Mid (350–1200ms)",
+            min = 0.00f,
+            max = 3.00f,
+            step = 0.05f,
+            initial = midY,
+            sp = sp,
+            format = "%.2f",
+            valueFormatter = { v -> if (v <= 0.001f) "OFF" else String.format(Locale.US, "%.2f", v) }
+        ) { v ->
+            ControlLayoutManager.setRecoilMidY(context, activeSlot, v)
+        }
+
+        addFloatSliderRow(
+            list,
+            label = "Stage 3 Late (1200ms+)",
+            min = 0.00f,
+            max = 3.00f,
+            step = 0.05f,
+            initial = lateY,
+            sp = sp,
+            format = "%.2f",
+            valueFormatter = { v -> if (v <= 0.001f) "OFF" else String.format(Locale.US, "%.2f", v) }
+        ) { v ->
+            ControlLayoutManager.setRecoilLateY(context, activeSlot, v)
         }
 
         addFloatSliderRow(
@@ -539,18 +699,18 @@ class FloatingSettingsDrawerView(
             min = -1.50f,
             max = 1.50f,
             step = 0.05f,
-            initial = ControlLayoutManager.getAimAntiRecoilX(context),
+            initial = driftX,
             sp = sp,
             format = "%+.2f",
             valueFormatter = { v ->
                 when {
                     Math.abs(v) < 0.01f -> "CENTER (0.00)"
-                    v < 0f -> String.format(Locale.US, "%.2f (Pull Left)", v)
-                    else -> String.format(Locale.US, "+%.2f (Pull Right)", v)
+                    v < 0f -> String.format(Locale.US, "%.2f (Left)", v)
+                    else -> String.format(Locale.US, "+%.2f (Right)", v)
                 }
             }
         ) { drift ->
-            ControlLayoutManager.setAimAntiRecoilX(context, drift)
+            ControlLayoutManager.setRecoilDriftX(context, activeSlot, drift)
         }
 
         addFloatSliderRow(
@@ -566,6 +726,19 @@ class FloatingSettingsDrawerView(
         ) { boost ->
             ControlLayoutManager.setAimInitialKickBoost(context, boost)
         }
+
+        // Interactive Live Recoil Test Pad
+        val testPad = RecoilTestPadView(context, activeSlot).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                ControlUtils.dpToPx(context, 108f).toInt()
+            ).apply {
+                topMargin = sp
+                bottomMargin = sp
+            }
+        }
+        list.addView(testPad)
+
         addSwitchRow(
             list,
             "Auto-Pause Aim on ESC/Tab/M",
@@ -690,6 +863,14 @@ class FloatingSettingsDrawerView(
             ControlLayoutManager.setHapticEnabled(context, checked)
             callbacks.onHapticToggled(checked)
         }
+        addSwitchRow(list, "Live Input HUD Pill", ControlLayoutManager.isLiveHudPillEnabled(context), sp) { checked ->
+            ControlLayoutManager.setLiveHudPillEnabled(context, checked)
+            callbacks.onAimProfileUpdated()
+        }
+        addSwitchRow(list, "Auto-Hide Outside Game", ControlLayoutManager.isAutoHideOutsideGame(context), sp) { checked ->
+            ControlLayoutManager.setAutoHideOutsideGame(context, checked)
+            callbacks.onAimProfileUpdated()
+        }
         addSwitchRow(list, "Lock Button Positions", controlLayout.isPositionsLocked, sp) { checked ->
             controlLayout.isPositionsLocked = checked
             ControlLayoutManager.setPositionsLocked(context, checked)
@@ -700,8 +881,20 @@ class FloatingSettingsDrawerView(
         }
         addDivider(list)
 
-        // 6. KEYBOARD, HIDE HUD & TURN OFF SERVICE
+        // 6. PANIC, KEYBOARD, HIDE HUD & TURN OFF SERVICE
         addSpacer(list, 6f)
+        val panicBtn = createFullWidthButton(
+            label = "⚡ Release All Held Keys & Macros",
+            bgColor = 0xFF333333.toInt(),
+            textColor = 0xFFFFFFFF.toInt()
+        ).apply {
+            setOnClickListener {
+                callbacks.onReleaseAllKeysPanic()
+            }
+        }
+        list.addView(panicBtn)
+        addSpacer(list, 6f)
+
         val kbBtn = createFullWidthButton(
             label = "Virtual Keyboard (⌨)",
             bgColor = 0xFF333333.toInt(),
@@ -761,7 +954,7 @@ class FloatingSettingsDrawerView(
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 0, 0, ControlUtils.dpToPx(context, 8f).toInt())
         }
-        val saveBtn = createPillButton("Save Current", 0xFFFFFFFF.toInt(), 0xFF1E1E1E.toInt()).apply {
+        val saveBtn = createPillButton("Save", 0xFFFFFFFF.toInt(), 0xFF1E1E1E.toInt()).apply {
             setOnClickListener {
                 ControlLayoutManager.saveActiveLayout(context, controlLayout.layout)
                 controlLayout.markSaved()
@@ -772,18 +965,30 @@ class FloatingSettingsDrawerView(
                 ).show()
             }
         }
-        val exportBtn = createPillButton("Export JSON", 0xFF333333.toInt(), 0xFFFFFFFF.toInt()).apply {
+        val exportBtn = createPillButton("Copy JSON", 0xFF333333.toInt(), 0xFFFFFFFF.toInt()).apply {
             setOnClickListener {
                 callbacks.onExportControlMap()
             }
         }
-        val gap = ControlUtils.dpToPx(context, 6f).toInt()
+        val shareBtn = createPillButton("SKM1://", 0xFF333333.toInt(), 0xFFFFFFFF.toInt()).apply {
+            setOnClickListener {
+                val code = ShareBackupManager.encodeShareCode(controlLayout.layout)
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("SwiftKeyM Preset", code))
+                Toast.makeText(context, "Copied SKM1:// share code", Toast.LENGTH_SHORT).show()
+            }
+        }
+        val gap = ControlUtils.dpToPx(context, 4f).toInt()
         actionRow.addView(
             saveBtn,
             LinearLayout.LayoutParams(0, ControlUtils.dpToPx(context, 36f).toInt(), 1f).apply { marginEnd = gap }
         )
         actionRow.addView(
             exportBtn,
+            LinearLayout.LayoutParams(0, ControlUtils.dpToPx(context, 36f).toInt(), 1f).apply { marginEnd = gap }
+        )
+        actionRow.addView(
+            shareBtn,
             LinearLayout.LayoutParams(0, ControlUtils.dpToPx(context, 36f).toInt(), 1f)
         )
         list.addView(actionRow)
@@ -1190,5 +1395,138 @@ class FloatingSettingsDrawerView(
                 ControlUtils.dpToPx(context, dp).toInt()
             )
         )
+    }
+
+    /**
+     * Interactive Live Recoil Test Pad: touch & hold inside the canvas to simulate weapon kick
+     * vs live 3-Stage compensation curve (Early 0–350ms, Mid 350–1200ms, Late 1200ms+).
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private class RecoilTestPadView(
+        context: Context,
+        private val slot: Int
+    ) : View(context) {
+
+        private var isFiring = false
+        private var startTimeMs = 0L
+        private var dotX = 0f
+        private var dotY = 0f
+        private var rawY = 0f
+        private val trail = Path()
+        private val handler = Handler(Looper.getMainLooper())
+
+        private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF161616.toInt()
+            style = Paint.Style.FILL
+        }
+        private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x44FFFFFF
+            style = Paint.Style.STROKE
+            strokeWidth = ControlUtils.dpToPx(context, 1f)
+        }
+        private val crosshairPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x33FFFFFF
+            strokeWidth = 1.5f
+        }
+        private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xAAFFFFFF.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = ControlUtils.dpToPx(context, 2f)
+        }
+        private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFFFFFFF.toInt()
+            style = Paint.Style.FILL
+        }
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFA8A8A8.toInt()
+            textSize = ControlUtils.dpToPx(context, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        private val simTick = object : Runnable {
+            override fun run() {
+                if (!isFiring) return
+                val elapsed = SystemClock.uptimeMillis() - startTimeMs
+                val early = ControlLayoutManager.getRecoilEarlyY(context, slot)
+                val mid = ControlLayoutManager.getRecoilMidY(context, slot)
+                val late = ControlLayoutManager.getRecoilLateY(context, slot)
+                val drift = ControlLayoutManager.getRecoilDriftX(context, slot)
+                val boost = ControlLayoutManager.getAimInitialKickBoost(context)
+
+                val stageY = when {
+                    elapsed <= 350L -> early * (1f + boost)
+                    elapsed <= 1200L -> mid
+                    else -> late
+                }
+                // Simulated upward gun kick (0.45px/tick) minus user's downward anti-recoil
+                val netClimb = 0.45f - stageY
+                dotY = (dotY - netClimb * 2.2f).coerceIn(10f, height - 10f)
+                dotX = (dotX + drift * 1.8f).coerceIn(10f, width - 10f)
+                rawY = (rawY - 0.9f).coerceAtLeast(8f)
+                trail.lineTo(dotX, dotY)
+                invalidate()
+                handler.postDelayed(this, 16L)
+            }
+        }
+
+        override fun onDetachedFromWindow() {
+            super.onDetachedFromWindow()
+            isFiring = false
+            handler.removeCallbacks(simTick)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    isFiring = true
+                    startTimeMs = SystemClock.uptimeMillis()
+                    dotX = width / 2f
+                    dotY = height * 0.72f
+                    rawY = dotY
+                    trail.reset()
+                    trail.moveTo(dotX, dotY)
+                    handler.removeCallbacks(simTick)
+                    handler.post(simTick)
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    isFiring = false
+                    handler.removeCallbacks(simTick)
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    invalidate()
+                    return true
+                }
+            }
+            return true
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val r = ControlUtils.dpToPx(context, 8f)
+            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), r, r, bgPaint)
+            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), r, r, borderPaint)
+
+            val cx = width / 2f
+            val cy = height * 0.72f
+            canvas.drawLine(cx - 24f, cy, cx + 24f, cy, crosshairPaint)
+            canvas.drawLine(cx, cy - 24f, cx, cy + 24f, crosshairPaint)
+
+            if (isFiring) {
+                canvas.drawPath(trail, trailPaint)
+                canvas.drawCircle(dotX, dotY, ControlUtils.dpToPx(context, 4.5f), dotPaint)
+                val elapsed = SystemClock.uptimeMillis() - startTimeMs
+                val stage = when {
+                    elapsed <= 350L -> "STAGE 1: EARLY"
+                    elapsed <= 1200L -> "STAGE 2: MID"
+                    else -> "STAGE 3: LATE"
+                }
+                canvas.drawText("G$slot • $stage (${elapsed}ms)", 14f, 26f, textPaint)
+            } else {
+                canvas.drawCircle(cx, cy, ControlUtils.dpToPx(context, 4f), crosshairPaint)
+                canvas.drawText("HOLD PAD TO TEST G$slot 3-STAGE RECOIL", 14f, 26f, textPaint)
+            }
+        }
     }
 }

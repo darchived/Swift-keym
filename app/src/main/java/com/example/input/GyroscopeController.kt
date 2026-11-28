@@ -37,6 +37,8 @@ class GyroscopeController(private val context: Context) : SensorEventListener {
     @Volatile var invertY: Boolean = false
     @Volatile var smoothing: Float = 0.25f // 0.0 (raw/zero deadzone) .. 1.0 (heavy anti-shake)
     @Volatile var paused: Boolean = false
+    @Volatile var isTouchSwiping: Boolean = false
+    @Volatile var adsZoomScale: Float = 1.0f
 
     private var isRegistered = false
     private var lastTimestampNs = 0L
@@ -108,8 +110,9 @@ class GyroscopeController(private val context: Context) : SensorEventListener {
         filteredX = filteredX + alpha * (dzYaw - filteredX)
         filteredY = filteredY + alpha * (dzPitch - filteredY)
 
-        // Convert angular displacement (rad) into pixel-equivalent mouse deltas
-        val scale = 240f
+        // Touch-to-Gyro Hybrid Blending: gently attenuate gyro jitter during fast touch swipes
+        val hybridTouchAttenuation = if (isTouchSwiping) 0.55f else 1.0f
+        val scale = 240f * adsZoomScale * hybridTouchAttenuation
         var dx = filteredX * dt * scale * sensitivityX.coerceIn(0.2f, 8.0f)
         var dy = filteredY * dt * scale * sensitivityY.coerceIn(0.2f, 8.0f)
 

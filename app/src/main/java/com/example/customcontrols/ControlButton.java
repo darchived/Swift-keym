@@ -86,13 +86,32 @@ public class ControlButton extends Button implements ControlInterface {
         int hPx = (int) Math.max(24f, mProperties.getHeightPx(getContext()));
 
         mParentLayout.resizeManagedView(this, wPx, hPx);
-
-        String label = mProperties.name != null ? mProperties.name.trim() : "";
-        setText(label);
+        refreshLabelForLayer(mParentLayout.isLayerShiftActive());
 
         applyEffectiveOpacity();
         applyBackgroundDrawable();
         regenerateDynamicCoordinates();
+    }
+
+    public void onLayerShiftChanged(boolean active) {
+        refreshLabelForLayer(active);
+        applyBackgroundDrawable();
+    }
+
+    private void refreshLabelForLayer(boolean layerActive) {
+        String primary = mProperties.name != null ? mProperties.name.trim() : "";
+        if (layerActive && !mProperties.isLayerShiftKey) {
+            String sec = mProperties.secondaryName != null ? mProperties.secondaryName.trim() : "";
+            if (!sec.isEmpty()) {
+                setText(sec);
+                return;
+            }
+            if (mProperties.secondaryKeycodes != null && mProperties.secondaryKeycodes[0] != 0) {
+                setText(com.example.input.LwjglGlfwKeycode.getKeyName(mProperties.secondaryKeycodes[0]));
+                return;
+            }
+        }
+        setText(primary);
     }
 
     public void applyEffectiveOpacity() {
@@ -123,7 +142,7 @@ public class ControlButton extends Button implements ControlInterface {
 
         Bitmap customBitmap = loadCustomBitmap();
         if (customBitmap != null) {
-            android.graphics.drawable.BitmapDrawable bd = new android.graphics.drawable.BitmapDrawable(getResources(), customBitmap);
+            BitmapDrawable bd = new BitmapDrawable(getResources(), customBitmap);
             bd.setGravity(Gravity.FILL);
             LayerDrawable layer = new LayerDrawable(new Drawable[]{gd, bd});
             setBackground(layer);
@@ -181,11 +200,27 @@ public class ControlButton extends Button implements ControlInterface {
 
     @Override
     public void sendKeyPresses(boolean isDown) {
-        if (mProperties.keycodes == null) return;
+        int[] targetArray = mProperties.keycodes;
+        if (!mProperties.isLayerShiftKey && mParentLayout.isLayerShiftActive() && hasAnyValidCode(mProperties.secondaryKeycodes)) {
+            targetArray = mProperties.secondaryKeycodes;
+        }
+        dispatchKeycodeArray(targetArray, isDown);
+    }
+
+    private boolean hasAnyValidCode(int[] arr) {
+        if (arr == null) return false;
+        for (int kc : arr) {
+            if (kc != 0) return true;
+        }
+        return false;
+    }
+
+    private void dispatchKeycodeArray(int[] arr, boolean isDown) {
+        if (arr == null) return;
         List<Integer> activeCodes = new ArrayList<>();
         HashSet<Integer> seen = new HashSet<>();
         boolean hasDuplicate = false;
-        for (int kc : mProperties.keycodes) {
+        for (int kc : arr) {
             if (kc != 0) {
                 activeCodes.add(kc);
                 if (!seen.add(kc)) {
@@ -275,8 +310,9 @@ public class ControlButton extends Button implements ControlInterface {
                     int parentH = mParentLayout.getLayoutHeightPx();
                     float maxX = Math.max(0f, parentW - getWidth());
                     float maxY = Math.max(0f, parentH - getHeight());
-                    float newX = ControlUtils.clamp(startX + dx, 0f, maxX);
-                    float newY = ControlUtils.clamp(startY + dy, 0f, maxY);
+                    float[] snapped = mParentLayout.applySnapAndAlignment(this, startX + dx, startY + dy, maxX, maxY);
+                    float newX = snapped[0];
+                    float newY = snapped[1];
                     mParentLayout.setManagedViewPosition(this, newX, newY);
                     mProperties.setStaticPosition(newX, newY, parentW, parentH);
                     mParentLayout.syncSelectionOverlays();
@@ -284,6 +320,7 @@ public class ControlButton extends Button implements ControlInterface {
                 return true;
 
             case MotionEvent.ACTION_UP:
+                mParentLayout.clearAlignmentGuides();
                 if (!hasMoved) {
                     mParentLayout.selectControl(this, true);
                 } else {
@@ -292,6 +329,7 @@ public class ControlButton extends Button implements ControlInterface {
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
+                mParentLayout.clearAlignmentGuides();
                 if (hasMoved) {
                     mParentLayout.notifyLayoutModified();
                 }
@@ -307,6 +345,27 @@ public class ControlButton extends Button implements ControlInterface {
     private float passThruLastX = 0f;
     private float passThruLastY = 0f;
     private boolean passThruDragging = false;
+    private float scrollAccumY = 0f;
+    private float lastScrollY = 0f;
+    private boolean dualLongPressTriggered = false;
+    private final Runnable dualLongPressRunnable = () -> {
+        if (mIsPressed && mProperties.dualActionEnabled) {
+            dualLongPressTriggered = true;
+            dispatchKeycodeArray(mProperties.secondaryKeycodes, true);
+        }
+    };
+
+    private float getScreenEventX(MotionEvent ev, int idx) {
+        int[] loc = new int[2];
+        getLocationOnScreen(loc);
+        return loc[0] + ev.getX(idx);
+    }
+
+    private float getScreenEventY(MotionEvent ev, int idx) {
+        int[] loc = new int[2];
+        getLocationOnScreen(loc);
+        return loc[1] + ev.getY(idx);
+    }
 
     protected boolean handlePlayTouch(MotionEvent event) {
         switch (event.getActionMasked()) {
@@ -314,12 +373,89 @@ public class ControlButton extends Button implements ControlInterface {
             case MotionEvent.ACTION_POINTER_DOWN: {
                 int idx = event.getActionIndex();
                 int pid = event.getPointerId(idx);
-                int[] loc = new int[2];
-                getLocationOnScreen(loc);
-                mParentLayout.notifyTouchFeedback(loc[0] + event.getX(idx), loc[1] + event.getY(idx));
+                float screenX = getScreenEventX(event, idx);
+                float screenY = getScreenEventY(event, idx);
+                mParentLayout.notifyTouchFeedback(screenX, screenY);
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID
                         || event.findPointerIndex(activePointerId) < 0) {
                     activePointerId = pid;
+
+                    // 1. 8-Direction Radial Quick Wheel
+                    if (mProperties.isRadialWheel) {
+                        mIsPressed = true;
+                        applyBackgroundDrawable();
+                        mParentLayout.notifyShowRadialWheel(mProperties, screenX, screenY);
+                        return true;
+                    }
+
+                    // 2. Virtual Mouse Scroll Wheel Strip
+                    if (mProperties.isScrollStrip) {
+                        mIsPressed = true;
+                        applyBackgroundDrawable();
+                        lastScrollY = event.getY(idx);
+                        scrollAccumY = 0f;
+                        return true;
+                    }
+
+                    // 3. Quick 90°/180° Turn Button
+                    if (mProperties.quickTurnDegrees > 0) {
+                        mIsPressed = true;
+                        applyBackgroundDrawable();
+                        mParentLayout.notifyQuickTurnRequested(mProperties.quickTurnDegrees);
+                        return true;
+                    }
+
+                    // 4. Layer Shift Modifier (Fn)
+                    if (mProperties.isLayerShiftKey) {
+                        if (mProperties.isToggle) {
+                            mIsToggled = !mIsToggled;
+                            mIsPressed = mIsToggled;
+                            applyBackgroundDrawable();
+                            mParentLayout.setLayerShiftActive(mIsToggled);
+                        } else if (!mIsPressed) {
+                            mIsPressed = true;
+                            applyBackgroundDrawable();
+                            mParentLayout.setLayerShiftActive(true);
+                        }
+                        return true;
+                    }
+
+                    // 5. Free-Look Button (unlocks temporary swipe look while pressed)
+                    if (mProperties.isFreeLookButton) {
+                        mIsPressed = true;
+                        applyBackgroundDrawable();
+                        mParentLayout.notifyFreeLookChanged(true);
+                        sendKeyPresses(true);
+                        float px = event.getX(idx);
+                        float py = event.getY(idx);
+                        passThruPointerId = pid;
+                        passThruDownX = px;
+                        passThruDownY = py;
+                        passThruLastX = px;
+                        passThruLastY = py;
+                        passThruDragging = false;
+                        return true;
+                    }
+
+                    // 6. Custom Macro ID binding
+                    if (mProperties.macroId != null && !mProperties.macroId.isEmpty()) {
+                        mIsPressed = true;
+                        applyBackgroundDrawable();
+                        com.example.input.MacroEngine.triggerPress(getContext(), mProperties.macroId);
+                        return true;
+                    }
+
+                    // 7. Dual-Action Button (Tap vs 300ms Hold)
+                    if (mProperties.dualActionEnabled) {
+                        mIsPressed = true;
+                        dualLongPressTriggered = false;
+                        applyBackgroundDrawable();
+                        macroHandler.removeCallbacks(dualLongPressRunnable);
+                        macroHandler.postDelayed(dualLongPressRunnable, 300L);
+                        return true;
+                    }
+
+                    // 8. Standard / Toggle / Pass-Thru Button
                     if (mProperties.isToggle) {
                         mIsToggled = !mIsToggled;
                         mIsPressed = mIsToggled;
@@ -345,7 +481,36 @@ public class ControlButton extends Button implements ControlInterface {
             }
 
             case MotionEvent.ACTION_MOVE: {
-                if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()
+                if (mProperties.isRadialWheel && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    int idx = event.findPointerIndex(activePointerId);
+                    if (idx >= 0) {
+                        mParentLayout.notifyUpdateRadialWheel(getScreenEventX(event, idx), getScreenEventY(event, idx));
+                    }
+                    return true;
+                }
+
+                if (mProperties.isScrollStrip && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    int idx = event.findPointerIndex(activePointerId);
+                    if (idx >= 0) {
+                        float currY = event.getY(idx);
+                        float dy = currY - lastScrollY;
+                        lastScrollY = currY;
+                        scrollAccumY += dy;
+                        float stepPx = ControlUtils.dpToPx(getContext(), 20f);
+                        while (scrollAccumY <= -stepPx) {
+                            InputBridge.sendMouseScroll(1.0f, 0f);
+                            scrollAccumY += stepPx;
+                        }
+                        while (scrollAccumY >= stepPx) {
+                            InputBridge.sendMouseScroll(-1.0f, 0f);
+                            scrollAccumY -= stepPx;
+                        }
+                    }
+                    return true;
+                }
+
+                if ((mProperties.passThruEnabled || mProperties.isFreeLookButton)
+                        && mParentLayout.isDetachedWindowMode()
                         && passThruPointerId != MotionEvent.INVALID_POINTER_ID) {
                     int idx = event.findPointerIndex(passThruPointerId);
                     if (idx >= 0) {
@@ -365,8 +530,9 @@ public class ControlButton extends Button implements ControlInterface {
                         passThruLastX = currX;
                         passThruLastY = currY;
                         if (dx != 0f || dy != 0f) {
-                            float sens = mParentLayout.getAimSensitivity();
-                            InputBridge.sendMouseMove(dx * sens, dy * sens);
+                            float sensX = ControlLayoutManager.INSTANCE.getAimSensX(getContext());
+                            float sensY = ControlLayoutManager.INSTANCE.getAimSensY(getContext());
+                            InputBridge.sendMouseMove(dx * sensX, dy * sensY);
                         }
                     }
                 }
@@ -390,7 +556,7 @@ public class ControlButton extends Button implements ControlInterface {
                     }
                     if (replacementIdx >= 0) {
                         activePointerId = event.getPointerId(replacementIdx);
-                        if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
+                        if ((mProperties.passThruEnabled || mProperties.isFreeLookButton) && mParentLayout.isDetachedWindowMode()) {
                             float px = event.getX(replacementIdx);
                             float py = event.getY(replacementIdx);
                             passThruPointerId = activePointerId;
@@ -401,12 +567,7 @@ public class ControlButton extends Button implements ControlInterface {
                             passThruDragging = false;
                         }
                     } else {
-                        activePointerId = MotionEvent.INVALID_POINTER_ID;
-                        if (!mProperties.isToggle && mIsPressed) {
-                            mIsPressed = false;
-                            applyBackgroundDrawable();
-                            sendKeyPresses(false);
-                        }
+                        finishPlayRelease();
                     }
                 }
                 return true;
@@ -414,28 +575,106 @@ public class ControlButton extends Button implements ControlInterface {
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                activePointerId = MotionEvent.INVALID_POINTER_ID;
-                passThruPointerId = MotionEvent.INVALID_POINTER_ID;
-                passThruDragging = false;
-                if (!mProperties.isToggle && mIsPressed) {
-                    mIsPressed = false;
-                    applyBackgroundDrawable();
-                    sendKeyPresses(false);
-                }
+                finishPlayRelease();
                 return true;
         }
         return true;
+    }
+
+    private void finishPlayRelease() {
+        activePointerId = MotionEvent.INVALID_POINTER_ID;
+        passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+        passThruDragging = false;
+
+        if (mProperties.isRadialWheel) {
+            mIsPressed = false;
+            applyBackgroundDrawable();
+            mParentLayout.notifyReleaseRadialWheel();
+            return;
+        }
+        if (mProperties.isScrollStrip || mProperties.quickTurnDegrees > 0) {
+            mIsPressed = false;
+            applyBackgroundDrawable();
+            return;
+        }
+        if (mProperties.isLayerShiftKey) {
+            if (!mProperties.isToggle && mIsPressed) {
+                mIsPressed = false;
+                applyBackgroundDrawable();
+                mParentLayout.setLayerShiftActive(false);
+            }
+            return;
+        }
+        if (mProperties.isFreeLookButton) {
+            if (mIsPressed) {
+                mIsPressed = false;
+                applyBackgroundDrawable();
+                sendKeyPresses(false);
+                mParentLayout.notifyFreeLookChanged(false);
+            }
+            return;
+        }
+        if (mProperties.macroId != null && !mProperties.macroId.isEmpty()) {
+            if (mIsPressed) {
+                mIsPressed = false;
+                applyBackgroundDrawable();
+                com.example.input.MacroEngine.triggerRelease(getContext(), mProperties.macroId);
+            }
+            return;
+        }
+        if (mProperties.dualActionEnabled) {
+            macroHandler.removeCallbacks(dualLongPressRunnable);
+            if (mIsPressed) {
+                mIsPressed = false;
+                applyBackgroundDrawable();
+                if (dualLongPressTriggered) {
+                    dualLongPressTriggered = false;
+                    dispatchKeycodeArray(mProperties.secondaryKeycodes, false);
+                } else {
+                    dispatchKeycodeArray(mProperties.keycodes, true);
+                    macroHandler.postDelayed(() -> dispatchKeycodeArray(mProperties.keycodes, false), 35L);
+                }
+            }
+            return;
+        }
+        if (!mProperties.isToggle && mIsPressed) {
+            mIsPressed = false;
+            applyBackgroundDrawable();
+            sendKeyPresses(false);
+        }
     }
 
     public void releaseIfPressed() {
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         passThruPointerId = MotionEvent.INVALID_POINTER_ID;
         passThruDragging = false;
+        macroHandler.removeCallbacks(dualLongPressRunnable);
+        if (mProperties.isRadialWheel) {
+            mParentLayout.notifyReleaseRadialWheel();
+        }
+        if (mProperties.isLayerShiftKey && (mIsPressed || mIsToggled)) {
+            mIsPressed = false;
+            mIsToggled = false;
+            applyBackgroundDrawable();
+            mParentLayout.setLayerShiftActive(false);
+            return;
+        }
+        if (mProperties.isFreeLookButton && mIsPressed) {
+            mParentLayout.notifyFreeLookChanged(false);
+        }
+        if (mProperties.dualActionEnabled && dualLongPressTriggered) {
+            dualLongPressTriggered = false;
+            dispatchKeycodeArray(mProperties.secondaryKeycodes, false);
+        }
         if (mIsPressed || mIsToggled) {
             mIsPressed = false;
             mIsToggled = false;
             applyBackgroundDrawable();
-            sendKeyPresses(false);
+            if (mProperties.macroId != null && !mProperties.macroId.isEmpty()) {
+                com.example.input.MacroEngine.triggerRelease(getContext(), mProperties.macroId);
+            } else {
+                sendKeyPresses(false);
+            }
         }
     }
 }

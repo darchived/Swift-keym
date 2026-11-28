@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Swift KeyM</string>
-    <string name="app_credits">Created by St3rlight • Team StarDevs</string>
+    <string name="app_credits">Swift KeyM v1.0.0-Released • Created by St3rlight • Team StarDevs</string>
     <string name="editor_activity_title">Swift KeyM Editor</string>
 
     <!-- Overlay & Service -->

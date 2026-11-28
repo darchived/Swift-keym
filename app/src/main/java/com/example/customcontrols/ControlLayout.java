@@ -60,6 +60,11 @@ public class ControlLayout extends FrameLayout {
         int getControlWindowX(View view);
         int getControlWindowY(View view);
         default void onTouchFeedback(float rawX, float rawY) {}
+        default void onQuickTurnRequested(int degrees) {}
+        default void onFreeLookChanged(boolean active) {}
+        default void onShowRadialWheel(ControlData data, float rawX, float rawY) {}
+        default void onUpdateRadialWheel(float rawX, float rawY) {}
+        default void onReleaseRadialWheel() {}
     }
 
     private static final int MAX_HISTORY = 50;
@@ -72,6 +77,10 @@ public class ControlLayout extends FrameLayout {
     private boolean mTouchRippleEnabled = true;
     private boolean mHapticEnabled = true;
     private boolean mPositionsLocked = false;
+    private boolean mSnapToGridEnabled = true;
+    private boolean mLayerShiftActive = false;
+    private float mGuideX = -1f;
+    private float mGuideY = -1f;
     private Vibrator mVibrator;
 
     private final ArrayList<ControlButton> mButtons = new ArrayList<>();
@@ -101,6 +110,7 @@ public class ControlLayout extends FrameLayout {
     private final SparseArray<View> mActivePointerTargets = new SparseArray<>();
 
     private final Paint mEditGridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mAlignGuidePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public ControlLayout(Context context) {
         this(context, null);
@@ -113,8 +123,11 @@ public class ControlLayout extends FrameLayout {
 
     private void init(Context context) {
         setWillNotDraw(false);
+        mSnapToGridEnabled = ControlLayoutManager.INSTANCE.isSnapToGridEnabled(context);
         mEditGridPaint.setColor(0x1EFFFFFF);
         mEditGridPaint.setStrokeWidth(1f);
+        mAlignGuidePaint.setColor(0xCCFFFFFF);
+        mAlignGuidePaint.setStrokeWidth(ControlUtils.dpToPx(context, 1.5f));
 
         mResizeHandle = new ControlHandleView(context, this);
         addView(mResizeHandle);
@@ -366,6 +379,161 @@ public class ControlLayout extends FrameLayout {
 
     public boolean isPositionsLocked() {
         return mPositionsLocked;
+    }
+
+    public void setSnapToGridEnabled(boolean enabled) {
+        this.mSnapToGridEnabled = enabled;
+        ControlLayoutManager.INSTANCE.setSnapToGridEnabled(getContext(), enabled);
+    }
+
+    public boolean isSnapToGridEnabled() {
+        return mSnapToGridEnabled;
+    }
+
+    public boolean isLayerShiftActive() {
+        return mLayerShiftActive;
+    }
+
+    public void setLayerShiftActive(boolean active) {
+        if (this.mLayerShiftActive == active) return;
+        this.mLayerShiftActive = active;
+        for (ControlButton btn : mButtons) {
+            btn.onLayerShiftChanged(active);
+        }
+        for (ControlDrawer drawer : mDrawers) {
+            drawer.onLayerShiftChanged(active);
+            for (ControlSubButton sub : drawer.getSubButtons()) {
+                sub.onLayerShiftChanged(active);
+            }
+        }
+    }
+
+    public float snapValueToGrid(float px) {
+        if (!mSnapToGridEnabled) return px;
+        float step = ControlUtils.dpToPx(getContext(), 16f);
+        if (step <= 1f) return px;
+        return Math.round(px / step) * step;
+    }
+
+    public float[] applySnapAndAlignment(View movingView, float rawX, float rawY, float maxX, float maxY) {
+        float x = ControlUtils.clamp(rawX, 0f, maxX);
+        float y = ControlUtils.clamp(rawY, 0f, maxY);
+        float guideX = -1f;
+        float guideY = -1f;
+        if (mSnapToGridEnabled) {
+            x = ControlUtils.clamp(snapValueToGrid(x), 0f, maxX);
+            y = ControlUtils.clamp(snapValueToGrid(y), 0f, maxY);
+            float snapTol = ControlUtils.dpToPx(getContext(), 8f);
+            float cx = x + movingView.getWidth() / 2f;
+            float cy = y + movingView.getHeight() / 2f;
+            for (ControlButton btn : mButtons) {
+                if (btn == movingView) continue;
+                float bx = getManagedViewX(btn);
+                float by = getManagedViewY(btn);
+                float bcx = bx + btn.getWidth() / 2f;
+                float bcy = by + btn.getHeight() / 2f;
+                if (Math.abs(cx - bcx) <= snapTol) {
+                    x = ControlUtils.clamp(bcx - movingView.getWidth() / 2f, 0f, maxX);
+                    guideX = bcx;
+                }
+                if (Math.abs(cy - bcy) <= snapTol) {
+                    y = ControlUtils.clamp(bcy - movingView.getHeight() / 2f, 0f, maxY);
+                    guideY = bcy;
+                }
+            }
+        }
+        mGuideX = guideX;
+        mGuideY = guideY;
+        invalidate();
+        return new float[]{x, y};
+    }
+
+    public void clearAlignmentGuides() {
+        if (mGuideX >= 0f || mGuideY >= 0f) {
+            mGuideX = -1f;
+            mGuideY = -1f;
+            invalidate();
+        }
+    }
+
+    public void snapAllToGrid() {
+        float step = ControlUtils.dpToPx(getContext(), 16f);
+        int parentW = getLayoutWidthPx();
+        int parentH = getLayoutHeightPx();
+        for (ControlButton btn : mButtons) {
+            float maxX = Math.max(0f, parentW - btn.getWidth());
+            float maxY = Math.max(0f, parentH - btn.getHeight());
+            float nx = ControlUtils.clamp(Math.round(getManagedViewX(btn) / step) * step, 0f, maxX);
+            float ny = ControlUtils.clamp(Math.round(getManagedViewY(btn) / step) * step, 0f, maxY);
+            setManagedViewPosition(btn, nx, ny);
+            btn.getProperties().setStaticPosition(nx, ny, parentW, parentH);
+        }
+        for (ControlJoystick joy : mJoysticks) {
+            float maxX = Math.max(0f, parentW - joy.getWidth());
+            float maxY = Math.max(0f, parentH - joy.getHeight());
+            float nx = ControlUtils.clamp(Math.round(getManagedViewX(joy) / step) * step, 0f, maxX);
+            float ny = ControlUtils.clamp(Math.round(getManagedViewY(joy) / step) * step, 0f, maxY);
+            setManagedViewPosition(joy, nx, ny);
+            joy.getProperties().setStaticPosition(nx, ny, parentW, parentH);
+        }
+        syncSelectionOverlays();
+        notifyLayoutModified();
+    }
+
+    public void centerSelectedHorizontally() {
+        if (mSelectedControl == null) return;
+        View v = mSelectedControl.getControlView();
+        int parentW = getLayoutWidthPx();
+        int parentH = getLayoutHeightPx();
+        float nx = Math.max(0f, (parentW - v.getWidth()) / 2f);
+        float ny = getManagedViewY(v);
+        setManagedViewPosition(v, nx, ny);
+        mSelectedControl.getProperties().setStaticPosition(nx, ny, parentW, parentH);
+        syncSelectionOverlays();
+        notifyLayoutModified();
+    }
+
+    public void centerSelectedVertically() {
+        if (mSelectedControl == null) return;
+        View v = mSelectedControl.getControlView();
+        int parentW = getLayoutWidthPx();
+        int parentH = getLayoutHeightPx();
+        float nx = getManagedViewX(v);
+        float ny = Math.max(0f, (parentH - v.getHeight()) / 2f);
+        setManagedViewPosition(v, nx, ny);
+        mSelectedControl.getProperties().setStaticPosition(nx, ny, parentW, parentH);
+        syncSelectionOverlays();
+        notifyLayoutModified();
+    }
+
+    public void notifyQuickTurnRequested(int degrees) {
+        if (mWindowHost != null) {
+            mWindowHost.onQuickTurnRequested(degrees);
+        }
+    }
+
+    public void notifyFreeLookChanged(boolean active) {
+        if (mWindowHost != null) {
+            mWindowHost.onFreeLookChanged(active);
+        }
+    }
+
+    public void notifyShowRadialWheel(ControlData data, float rawX, float rawY) {
+        if (mWindowHost != null) {
+            mWindowHost.onShowRadialWheel(data, rawX, rawY);
+        }
+    }
+
+    public void notifyUpdateRadialWheel(float rawX, float rawY) {
+        if (mWindowHost != null) {
+            mWindowHost.onUpdateRadialWheel(rawX, rawY);
+        }
+    }
+
+    public void notifyReleaseRadialWheel() {
+        if (mWindowHost != null) {
+            mWindowHost.onReleaseRadialWheel();
+        }
     }
 
     public void setOnTouchFeedbackListener(OnTouchFeedbackListener listener) {
@@ -761,6 +929,12 @@ public class ControlLayout extends FrameLayout {
             }
             for (float y = step; y < getHeight(); y += step) {
                 canvas.drawLine(0, y, getWidth(), y, mEditGridPaint);
+            }
+            if (mGuideX >= 0f) {
+                canvas.drawLine(mGuideX, 0f, mGuideX, getHeight(), mAlignGuidePaint);
+            }
+            if (mGuideY >= 0f) {
+                canvas.drawLine(0f, mGuideY, getWidth(), mGuideY, mAlignGuidePaint);
             }
         }
     }

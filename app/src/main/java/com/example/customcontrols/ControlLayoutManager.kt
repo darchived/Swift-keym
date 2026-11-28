@@ -50,6 +50,19 @@ object ControlLayoutManager {
     private const val KEY_LAST_CHANGELOG_VERSION = "last_seen_changelog_version"
     private const val KEY_KEYBOARD_POS_X = "floating_keyboard_pos_x"
     private const val KEY_KEYBOARD_POS_Y = "floating_keyboard_pos_y"
+    private const val KEY_AIM_SENS_X = "aim_sens_x"
+    private const val KEY_AIM_SENS_Y = "aim_sens_y"
+    private const val KEY_AIM_INERTIA = "aim_inertia"
+    private const val KEY_AIM_ADS_RAMP_MS = "aim_ads_ramp_ms"
+    private const val KEY_AIM_ZOOM_LEVEL = "aim_zoom_level"
+    private const val KEY_AIM_EDGE_GUARD_DP = "aim_edge_guard_dp"
+    private const val KEY_SNAP_TO_GRID = "snap_to_grid_enabled"
+    private const val KEY_AUTO_HIDE_OUTSIDE_GAME = "auto_hide_outside_game"
+    private const val KEY_LIVE_HUD_PILL = "live_hud_pill_enabled"
+    private const val KEY_ACTIVE_RECOIL_SLOT = "active_recoil_slot"
+    private const val KEY_RECOIL_ADS_ONLY = "recoil_ads_only"
+    private const val KEY_SAVED_MACROS_JSON = "saved_macros_json"
+    private const val KEY_GAME_LINKS_JSON = "game_links_json"
     private const val DIR_CONTROLMAP = "controlmap"
     private const val DIR_ICONS = "control_icons"
 
@@ -588,6 +601,278 @@ object ControlLayoutManager {
             .edit()
             .putInt(KEY_KEYBOARD_POS_X, x)
             .putInt(KEY_KEYBOARD_POS_Y, y)
+            .apply()
+    }
+
+    fun getAimSensX(context: Context): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_AIM_SENS_X)) {
+            prefs.getFloat(KEY_AIM_SENS_X, 1.2f).coerceIn(0.2f, 5.0f)
+        } else {
+            getAimSensitivity(context)
+        }
+    }
+
+    fun setAimSensX(context: Context, sensX: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_SENS_X, sensX.coerceIn(0.2f, 5.0f))
+            .apply()
+    }
+
+    fun getAimSensY(context: Context): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_AIM_SENS_Y)) {
+            prefs.getFloat(KEY_AIM_SENS_Y, 1.2f).coerceIn(0.2f, 5.0f)
+        } else {
+            getAimSensitivity(context)
+        }
+    }
+
+    fun setAimSensY(context: Context, sensY: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_SENS_Y, sensY.coerceIn(0.2f, 5.0f))
+            .apply()
+    }
+
+    fun getAimInertia(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AIM_INERTIA, 0.0f)
+            .coerceIn(0.0f, 0.85f)
+
+    fun setAimInertia(context: Context, inertia: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AIM_INERTIA, inertia.coerceIn(0.0f, 0.85f))
+            .apply()
+    }
+
+    fun getAimAdsRampMs(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_AIM_ADS_RAMP_MS, 80)
+            .coerceIn(0, 250)
+
+    fun setAimAdsRampMs(context: Context, rampMs: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_AIM_ADS_RAMP_MS, rampMs.coerceIn(0, 250))
+            .apply()
+    }
+
+    fun getAimZoomLevel(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_AIM_ZOOM_LEVEL, 0)
+            .coerceIn(0, 2)
+
+    fun setAimZoomLevel(context: Context, level: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_AIM_ZOOM_LEVEL, level.coerceIn(0, 2))
+            .apply()
+    }
+
+    fun cycleAimZoomLevel(context: Context): Int {
+        val next = (getAimZoomLevel(context) + 1) % 3
+        setAimZoomLevel(context, next)
+        return next
+    }
+
+    fun getZoomFactorForLevel(level: Int): Float = when (level) {
+        1 -> 0.65f
+        2 -> 0.40f
+        else -> 1.0f
+    }
+
+    fun getZoomLabel(level: Int): String = when (level) {
+        1 -> "2x–4x"
+        2 -> "6x+"
+        else -> "1x"
+    }
+
+    fun getAimEdgeGuardDp(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_AIM_EDGE_GUARD_DP, 6)
+            .coerceIn(0, 20)
+
+    fun setAimEdgeGuardDp(context: Context, dp: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_AIM_EDGE_GUARD_DP, dp.coerceIn(0, 20))
+            .apply()
+    }
+
+    fun isSnapToGridEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SNAP_TO_GRID, true)
+
+    fun setSnapToGridEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SNAP_TO_GRID, enabled)
+            .apply()
+    }
+
+    fun isAutoHideOutsideGame(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_HIDE_OUTSIDE_GAME, false)
+
+    fun setAutoHideOutsideGame(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUTO_HIDE_OUTSIDE_GAME, enabled)
+            .apply()
+    }
+
+    fun isLiveHudPillEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LIVE_HUD_PILL, true)
+
+    fun setLiveHudPillEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_LIVE_HUD_PILL, enabled)
+            .apply()
+    }
+
+    fun getActiveRecoilSlot(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_ACTIVE_RECOIL_SLOT, 1)
+            .coerceIn(1, 2)
+
+    fun setActiveRecoilSlot(context: Context, slot: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_ACTIVE_RECOIL_SLOT, slot.coerceIn(1, 2))
+            .apply()
+    }
+
+    fun isRecoilAdsOnly(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_RECOIL_ADS_ONLY, false)
+
+    fun setRecoilAdsOnly(context: Context, adsOnly: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_RECOIL_ADS_ONLY, adsOnly)
+            .apply()
+    }
+
+    fun getRecoilEarlyY(context: Context, slot: Int = getActiveRecoilSlot(context)): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "recoil_slot_${slot.coerceIn(1, 2)}_early_y"
+        return if (prefs.contains(key)) {
+            prefs.getFloat(key, 0.00f).coerceIn(0.00f, 3.00f)
+        } else if (slot == 1) {
+            getAimAntiRecoilY(context)
+        } else {
+            0.25f
+        }
+    }
+
+    fun setRecoilEarlyY(context: Context, slot: Int, value: Float) {
+        val clean = value.coerceIn(0.00f, 3.00f)
+        val s = slot.coerceIn(1, 2)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("recoil_slot_${s}_early_y", clean)
+            .apply()
+        if (s == 1) {
+            setAimAntiRecoilY(context, clean)
+        }
+    }
+
+    fun getRecoilMidY(context: Context, slot: Int = getActiveRecoilSlot(context)): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "recoil_slot_${slot.coerceIn(1, 2)}_mid_y"
+        return if (prefs.contains(key)) {
+            prefs.getFloat(key, 0.00f).coerceIn(0.00f, 3.00f)
+        } else {
+            getRecoilEarlyY(context, slot)
+        }
+    }
+
+    fun setRecoilMidY(context: Context, slot: Int, value: Float) {
+        val clean = value.coerceIn(0.00f, 3.00f)
+        val s = slot.coerceIn(1, 2)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("recoil_slot_${s}_mid_y", clean)
+            .apply()
+    }
+
+    fun getRecoilLateY(context: Context, slot: Int = getActiveRecoilSlot(context)): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "recoil_slot_${slot.coerceIn(1, 2)}_late_y"
+        return if (prefs.contains(key)) {
+            prefs.getFloat(key, 0.00f).coerceIn(0.00f, 3.00f)
+        } else {
+            (getRecoilMidY(context, slot) * 0.85f).coerceIn(0.00f, 3.00f)
+        }
+    }
+
+    fun setRecoilLateY(context: Context, slot: Int, value: Float) {
+        val clean = value.coerceIn(0.00f, 3.00f)
+        val s = slot.coerceIn(1, 2)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("recoil_slot_${s}_late_y", clean)
+            .apply()
+    }
+
+    fun getRecoilDriftX(context: Context, slot: Int = getActiveRecoilSlot(context)): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val key = "recoil_slot_${slot.coerceIn(1, 2)}_drift_x"
+        return if (prefs.contains(key)) {
+            prefs.getFloat(key, 0.00f).coerceIn(-1.50f, 1.50f)
+        } else if (slot == 1) {
+            getAimAntiRecoilX(context)
+        } else {
+            0.00f
+        }
+    }
+
+    fun setRecoilDriftX(context: Context, slot: Int, value: Float) {
+        val clean = value.coerceIn(-1.50f, 1.50f)
+        val s = slot.coerceIn(1, 2)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("recoil_slot_${s}_drift_x", clean)
+            .apply()
+        if (s == 1) {
+            setAimAntiRecoilX(context, clean)
+        }
+    }
+
+    fun getSavedMacrosJson(context: Context): String =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_SAVED_MACROS_JSON, "") ?: ""
+
+    fun setSavedMacrosJson(context: Context, json: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SAVED_MACROS_JSON, json)
+            .apply()
+    }
+
+    fun getMacros(context: Context): MutableList<com.example.input.MacroDefinition> =
+        com.example.input.MacroDefinition.listFromJson(getSavedMacrosJson(context))
+
+    fun saveMacros(context: Context, macros: List<com.example.input.MacroDefinition>) {
+        setSavedMacrosJson(context, com.example.input.MacroDefinition.listToJson(macros))
+    }
+
+    fun getMacroById(context: Context, id: String): com.example.input.MacroDefinition? =
+        getMacros(context).firstOrNull { it.id == id }
+
+    fun getGameLinksJson(context: Context): String =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_GAME_LINKS_JSON, "") ?: ""
+
+    fun setGameLinksJson(context: Context, json: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_GAME_LINKS_JSON, json)
             .apply()
     }
 

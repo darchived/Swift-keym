@@ -49,12 +49,20 @@ public object InputBridge {
     private var menuKeyListener: ((Int) -> Unit)? = null
 
     @Volatile
+    private var weaponSlotListener: ((Int) -> Unit)? = null
+
+    @Volatile
+    private var inputObserver: ((Int, Boolean, Boolean) -> Unit)? = null
+
+    @Volatile
     var isPrimaryMouseDown: Boolean = false
         private set
 
     @Volatile
     var isSecondaryMouseDown: Boolean = false
         private set
+
+    private val heldGlfwKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
         refreshShizukuState()
@@ -155,6 +163,17 @@ public object InputBridge {
         menuKeyListener = listener
     }
 
+    fun setWeaponSlotListener(listener: ((Int) -> Unit)?) {
+        weaponSlotListener = listener
+    }
+
+    fun setInputObserver(observer: ((code: Int, isMouse: Boolean, down: Boolean) -> Unit)?) {
+        inputObserver = observer
+    }
+
+    @JvmStatic
+    fun isKeyDown(glfwKeycode: Int): Boolean = heldGlfwKeys.contains(glfwKeycode)
+
     @JvmStatic
     fun sendKey(glfwKeycode: Int, down: Boolean) {
         if (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_UNKNOWN) return
@@ -189,12 +208,31 @@ public object InputBridge {
             }
         }
 
-        if (down && (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_ESCAPE
-                    || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_TAB
-                    || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_M)
-        ) {
-            menuKeyListener?.invoke(glfwKeycode)
+        if (down) {
+            heldGlfwKeys.add(glfwKeycode)
+            if (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_1) {
+                weaponSlotListener?.invoke(1)
+            } else if (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_2) {
+                weaponSlotListener?.invoke(2)
+            }
+            if (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_ESCAPE
+                || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_TAB
+                || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_M
+            ) {
+                menuKeyListener?.invoke(glfwKeycode)
+            }
+            if (glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_SPACE
+                || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_LEFT_SHIFT
+                || glfwKeycode == LwjglGlfwKeycode.GLFW_KEY_ESCAPE
+            ) {
+                MacroEngine.notifyInterruptKey(glfwKeycode)
+            }
+        } else {
+            heldGlfwKeys.remove(glfwKeycode)
         }
+
+        inputObserver?.invoke(glfwKeycode, false, down)
+        MacroEngine.onObservedInput(glfwKeycode, isMouse = false, down = down)
 
         val androidKey = LwjglGlfwKeycode.toAndroidKeyCode(glfwKeycode)
         if (androidKey <= 0) return
@@ -214,6 +252,8 @@ public object InputBridge {
         } else if (button == MotionEvent.BUTTON_SECONDARY) {
             isSecondaryMouseDown = down
         }
+        inputObserver?.invoke(button, true, down)
+        MacroEngine.onObservedInput(button, isMouse = true, down = down)
         val svc = inputService ?: return
         try {
             svc.injectMouseButton(button, down)
@@ -247,6 +287,8 @@ public object InputBridge {
     fun resetAll() {
         isPrimaryMouseDown = false
         isSecondaryMouseDown = false
+        heldGlfwKeys.clear()
+        MacroEngine.cancelAll()
         val svc = inputService ?: return
         try {
             svc.resetAllInputs()
@@ -273,6 +315,24 @@ public object InputBridge {
             Log.e(TAG, "execShell failed", e)
             -1 to (e.message ?: "RemoteException")
         }
+    }
+
+    @JvmStatic
+    fun getForegroundPackageViaShizuku(): String? {
+        if (inputService == null) return null
+        val (code, out) = execShell("dumpsys window windows | grep mCurrentFocus")
+        if (code == 0 && out.isNotBlank()) {
+            val regex = Regex("u\\d+\\s+([a-zA-Z0-9._]+)/")
+            val match = regex.find(out)
+            if (match != null) return match.groupValues[1]
+        }
+        val (c2, out2) = execShell("dumpsys activity activities | grep topResumedActivity")
+        if (c2 == 0 && out2.isNotBlank()) {
+            val regex = Regex("u\\d+\\s+([a-zA-Z0-9._]+)/")
+            val match = regex.find(out2)
+            if (match != null) return match.groupValues[1]
+        }
+        return null
     }
 
     @JvmStatic

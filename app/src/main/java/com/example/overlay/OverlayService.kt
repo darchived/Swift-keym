@@ -32,20 +32,33 @@ import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.customcontrols.ControlData
 import com.example.customcontrols.ControlLayout
 import com.example.customcontrols.ControlLayoutManager
 import com.example.customcontrols.utils.ControlUtils
 import com.example.input.GyroscopeController
 import com.example.input.InputBridge
 import com.example.input.LwjglGlfwKeycode
+import com.example.input.MacroEngine
 import com.example.input.ShizukuHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
@@ -70,6 +83,9 @@ class OverlayService : Service() {
         const val ACTION_UPDATE_CROSSHAIR = "com.example.overlay.ACTION_UPDATE_CROSSHAIR"
         const val ACTION_UPDATE_HAPTICS = "com.example.overlay.ACTION_UPDATE_HAPTICS"
         const val ACTION_UPDATE_LOCK = "com.example.overlay.ACTION_UPDATE_LOCK"
+        const val ACTION_UPDATE_AIM_PROFILE = "com.example.overlay.ACTION_UPDATE_AIM_PROFILE"
+        const val EXTRA_PRESET_FILE = "extra_preset_file"
+        const val EXTRA_TARGET_PACKAGE = "extra_target_package"
 
         private const val CHANNEL_ID = "swift_keym_overlay_channel"
         private const val NOTIF_ID = 4102
@@ -118,9 +134,15 @@ class OverlayService : Service() {
     private var eyeButton: ImageButton? = null
     private var eyeParams: WindowManager.LayoutParams? = null
 
-    // Native WindowManager Floating Settings Drawer (no Dialog/AlertDialog)
+    // Native WindowManager Floating Settings Drawer & Keyboard & Radial Wheel
     private var settingsDrawer: FloatingSettingsDrawerView? = null
     private var keyboardDrawer: FloatingKeyboardDrawerView? = null
+    private var radialWheelView: RadialWheelOverlayView? = null
+
+    // Live Input HUD Pill (Shizuku state, weapon slot G1/G2, aim/gyro mode, panic Release All)
+    private var liveHudPillRoot: LinearLayout? = null
+    private var liveHudPillParams: WindowManager.LayoutParams? = null
+    private var liveHudStatusText: TextView? = null
 
     // Visual-only (strictly FLAG_NOT_TOUCHABLE) Touch Ripple & Center Crosshair windows
     private var touchRippleView: TouchRippleOverlayView? = null
@@ -129,6 +151,12 @@ class OverlayService : Service() {
     private var crosshairParams: WindowManager.LayoutParams? = null
 
     private var isHudHidden = false
+    private var isFreeLookActive = false
+    private var targetGamePackage: String? = null
+    private var autoHiddenByWatcher = false
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var gameWatcherJob: Job? = null
 
     private var shootPressStartTime = 0L
     private var lastPrimaryMouseDown = false
@@ -143,18 +171,27 @@ class OverlayService : Service() {
             }
             lastPrimaryMouseDown = isShooting
 
-            if (_isRunning.value && !isHudHidden && controlLayout?.isModifiable != true) {
-                val recoilY = ControlLayoutManager.getAimAntiRecoilY(this@OverlayService)
-                val recoilX = ControlLayoutManager.getAimAntiRecoilX(this@OverlayService)
-                if (isShooting && (recoilY > 0f || recoilX != 0f)) {
-                    val isKick = (now - shootPressStartTime) <= 350L
-                    val kickBoost = ControlLayoutManager.getAimInitialKickBoost(this@OverlayService)
-                    val activeAimZone = aimZoneView
-                    if (activeAimZone != null && isAimEnabled) {
-                        activeAimZone.addRecoilTick(recoilX, recoilY, kickBoost, isKick)
-                    } else {
-                        val kickMultiplier = if (isKick) (1.0f + kickBoost) else 1.0f
-                        InputBridge.sendMouseMove(recoilX, recoilY * kickMultiplier)
+            if (_isRunning.value && !isHudHidden && controlLayout?.isModifiable != true && !isFreeLookActive) {
+                val recoilAdsOnly = ControlLayoutManager.isRecoilAdsOnly(this@OverlayService)
+                if (isShooting && (!recoilAdsOnly || InputBridge.isSecondaryMouseDown)) {
+                    val slot = ControlLayoutManager.getActiveRecoilSlot(this@OverlayService)
+                    val elapsed = now - shootPressStartTime
+                    val stageRecoilY = when {
+                        elapsed <= 350L -> ControlLayoutManager.getRecoilEarlyY(this@OverlayService, slot)
+                        elapsed <= 1200L -> ControlLayoutManager.getRecoilMidY(this@OverlayService, slot)
+                        else -> ControlLayoutManager.getRecoilLateY(this@OverlayService, slot)
+                    }
+                    val recoilX = ControlLayoutManager.getRecoilDriftX(this@OverlayService, slot)
+                    if (stageRecoilY > 0f || recoilX != 0f) {
+                        val isKick = elapsed <= 350L
+                        val kickBoost = ControlLayoutManager.getAimInitialKickBoost(this@OverlayService)
+                        val activeAimZone = aimZoneView
+                        if (activeAimZone != null && isAimEnabled) {
+                            activeAimZone.addRecoilTick(recoilX, stageRecoilY, kickBoost, isKick)
+                        } else {
+                            val kickMultiplier = if (isKick) (1.0f + kickBoost) else 1.0f
+                            InputBridge.sendMouseMove(recoilX, stageRecoilY * kickMultiplier)
+                        }
                     }
                 }
             }
@@ -271,6 +308,30 @@ class OverlayService : Service() {
         override fun onTouchFeedback(rawX: Float, rawY: Float) {
             spawnTouchRipple(rawX, rawY)
         }
+
+        override fun onQuickTurnRequested(degrees: Int) {
+            aimZoneView?.performSmoothQuickTurn(degrees)
+        }
+
+        override fun onFreeLookChanged(active: Boolean) {
+            isFreeLookActive = active
+            liveHudPillRoot?.post { updateLiveHudPill() }
+        }
+
+        override fun onShowRadialWheel(data: ControlData, rawX: Float, rawY: Float) {
+            val wheel = radialWheelView ?: RadialWheelOverlayView(this@OverlayService, windowManager).also {
+                radialWheelView = it
+            }
+            wheel.showWheel(data, rawX, rawY)
+        }
+
+        override fun onUpdateRadialWheel(rawX: Float, rawY: Float) {
+            radialWheelView?.updatePointer(rawX, rawY)
+        }
+
+        override fun onReleaseRadialWheel() {
+            radialWheelView?.releaseAndDismiss()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -322,6 +383,23 @@ class OverlayService : Service() {
                 controlLayout?.isPositionsLocked = ControlLayoutManager.isPositionsLocked(this)
                 return START_STICKY
             }
+            ACTION_UPDATE_AIM_PROFILE -> {
+                val unified = ControlLayoutManager.getAimSensX(this)
+                controlLayout?.aimSensitivity = unified
+                controlLayout?.isSnapToGridEnabled = ControlLayoutManager.isSnapToGridEnabled(this)
+                updateLiveHudPill()
+                startOrStopGameWatcher()
+                return START_STICKY
+            }
+        }
+
+        intent?.getStringExtra(EXTRA_PRESET_FILE)?.takeIf { it.isNotBlank() }?.let { presetFile ->
+            ControlLayoutManager.setActiveLayoutName(this, presetFile)
+            controlLayout?.loadLayout(ControlLayoutManager.loadActiveLayout(this))
+        }
+        intent?.getStringExtra(EXTRA_TARGET_PACKAGE)?.takeIf { it.isNotBlank() }?.let { pkg ->
+            targetGamePackage = pkg
+            autoHiddenByWatcher = false
         }
 
         if (!Settings.canDrawOverlays(this)) {
@@ -339,13 +417,16 @@ class OverlayService : Service() {
             // Layer 3 (Visual-Only Non-Touchable): Center Crosshair & Touch Ripple windows
             setupCrosshairWindow()
             setupTouchRippleWindow()
-            // Layer 4 (Top Chrome): Top Pill Bar, Quick-Aim Chip, and Persistent Floating Eye Button
+            // Layer 4 (Top Chrome): Top Pill Bar, Quick-Aim Chip, Persistent Eye Button & Live HUD Pill
             setupTopFloatingBar()
             setupQuickAimButton()
             setupFloatingEyeButton()
+            setupLiveHudPill()
             // Layer 5 (Hardware Sensor): CODM-style Gyroscope controller
             setupGyroscopeController()
         }
+        startOrStopGameWatcher()
+        updateLiveHudPill()
         _isRunning.value = true
         return START_STICKY
     }
@@ -437,10 +518,11 @@ class OverlayService : Service() {
         val layout = ControlLayout(this).apply {
             setOverlayWindowMode(true)
             setWindowOverlayHost(windowOverlayHost)
-            aimSensitivity = ControlLayoutManager.getAimSensitivity(this@OverlayService)
+            aimSensitivity = ControlLayoutManager.getAimSensX(this@OverlayService)
             isTouchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(this@OverlayService)
             isHapticEnabled = ControlLayoutManager.isHapticEnabled(this@OverlayService)
             isPositionsLocked = ControlLayoutManager.isPositionsLocked(this@OverlayService)
+            isSnapToGridEnabled = ControlLayoutManager.isSnapToGridEnabled(this@OverlayService)
             setOnHistoryChangedListener { canUndo, canRedo, _ ->
                 updateOverlayHistoryButtons(canUndo, canRedo)
             }
@@ -460,6 +542,14 @@ class OverlayService : Service() {
                 LwjglGlfwKeycode.SPECIALBTN_MENU -> topBarRoot?.post { toggleEditMode() }
                 LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO -> topBarRoot?.post { toggleGyroFromOverlay() }
                 LwjglGlfwKeycode.SPECIALBTN_KEYBOARD -> topBarRoot?.post { toggleFloatingKeyboard() }
+            }
+        }
+
+        InputBridge.setWeaponSlotListener { slot ->
+            ControlLayoutManager.setActiveRecoilSlot(this@OverlayService, slot)
+            liveHudPillRoot?.post {
+                updateLiveHudPill()
+                settingsDrawer?.refreshRecoilSlotUi()
             }
         }
 
@@ -547,6 +637,7 @@ class OverlayService : Service() {
         controller.smoothing = ControlLayoutManager.getGyroSmoothing(this)
         controller.paused = isHudHidden || (controlLayout?.isModifiable == true)
         gyroToggleBtn?.let { styleChipToggleButton(it, enabled) }
+        updateLiveHudPill()
     }
 
     private fun toggleGyroFromOverlay() {
@@ -795,6 +886,128 @@ class OverlayService : Service() {
         windowManager.addView(eyeBtn, params)
     }
 
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupLiveHudPill() {
+        val pill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundResource(R.drawable.bg_pill_bar)
+            val hp = ControlUtils.dpToPx(this@OverlayService, 8f).toInt()
+            val vp = ControlUtils.dpToPx(this@OverlayService, 4f).toInt()
+            setPadding(hp, vp, hp, vp)
+            elevation = ControlUtils.dpToPx(this@OverlayService, 10f)
+        }
+
+        val statusTv = TextView(this).apply {
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 10.5f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        liveHudStatusText = statusTv
+
+        val panicBtn = TextView(this).apply {
+            text = "⚡"
+            setTextColor(0xFF1E1E1E.toInt())
+            textSize = 11f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFFFFFFFF.toInt())
+            }
+            val sz = ControlUtils.dpToPx(this@OverlayService, 22f).toInt()
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                marginStart = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
+            }
+            contentDescription = "Emergency Release All Keys"
+            setOnClickListener {
+                releaseAllKeysPanic()
+            }
+        }
+
+        pill.addView(statusTv)
+        pill.addView(panicBtn)
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            BASE_WINDOW_FLAGS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = ControlUtils.dpToPx(this@OverlayService, 12f).toInt()
+            y = ControlUtils.dpToPx(this@OverlayService, 8f).toInt()
+        }
+
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val dragListener = createDragOrClickTouchListener(pill, params, touchSlop)
+        pill.setOnTouchListener(dragListener)
+        statusTv.setOnTouchListener(dragListener)
+
+        liveHudPillRoot = pill
+        liveHudPillParams = params
+        windowManager.addView(pill, params)
+        updateLiveHudPill()
+    }
+
+    private fun updateLiveHudPill() {
+        val pill = liveHudPillRoot ?: return
+        val tv = liveHudStatusText ?: return
+        val enabled = ControlLayoutManager.isLiveHudPillEnabled(this) && !isHudHidden
+        setChromeWindowVisible(pill, liveHudPillParams, enabled)
+        if (!enabled) return
+
+        val shizukuDot = if (InputBridge.isServiceConnected.value) "●" else "○"
+        val slot = "G${ControlLayoutManager.getActiveRecoilSlot(this)}"
+        val zoom = ControlLayoutManager.getZoomLabel(ControlLayoutManager.getAimZoomLevel(this))
+        val mode = when {
+            isFreeLookActive -> "FREE"
+            isAimEnabled -> "AIM"
+            else -> "PASS"
+        }
+        val gyroTag = if (ControlLayoutManager.isGyroEnabled(this)) " • GYRO" else ""
+        tv.text = "$shizukuDot $slot • $mode($zoom)$gyroTag"
+    }
+
+    private fun releaseAllKeysPanic() {
+        InputBridge.resetAll()
+        MacroEngine.cancelAll()
+        controlLayout?.releaseAllActiveTouches()
+        aimZoneView?.resetPointer()
+        radialWheelView?.dismissImmediate()
+        isFreeLookActive = false
+        updateLiveHudPill()
+        Toast.makeText(this, "⚡ Released all keys & macros", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startOrStopGameWatcher() {
+        val shouldWatch = ControlLayoutManager.isAutoHideOutsideGame(this) && !targetGamePackage.isNullOrBlank()
+        if (!shouldWatch) {
+            gameWatcherJob?.cancel()
+            gameWatcherJob = null
+            return
+        }
+        if (gameWatcherJob?.isActive == true) return
+        gameWatcherJob = serviceScope.launch {
+            while (isActive) {
+                delay(1200L)
+                val target = targetGamePackage ?: continue
+                if (!ControlLayoutManager.isAutoHideOutsideGame(this@OverlayService)) continue
+                val fg = InputBridge.getForegroundPackageViaShizuku() ?: continue
+                withContext(Dispatchers.Main) {
+                    if (fg != target && !isHudHidden) {
+                        autoHiddenByWatcher = true
+                        toggleHudVisibility()
+                    } else if (fg == target && autoHiddenByWatcher && isHudHidden) {
+                        autoHiddenByWatcher = false
+                        toggleHudVisibility()
+                    }
+                }
+            }
+        }
+    }
+
     private fun createDragOrClickTouchListener(
         targetWindowView: View,
         params: WindowManager.LayoutParams,
@@ -874,6 +1087,15 @@ class OverlayService : Service() {
             } catch (_: Throwable) {
             }
         }
+        val pill = liveHudPillRoot
+        val pParams = liveHudPillParams
+        if (pill != null && pParams != null && pill.isAttachedToWindow) {
+            try {
+                windowManager.removeViewImmediate(pill)
+                windowManager.addView(pill, pParams)
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     private fun styleChipToggleButton(btn: ImageButton, enabled: Boolean) {
@@ -905,6 +1127,7 @@ class OverlayService : Service() {
         isAimEnabled = enabled && !isHudHidden
         quickAimButton?.let { styleChipToggleButton(it, isAimEnabled) }
         updateAimZoneWindowLayout()
+        updateLiveHudPill()
     }
 
     private fun updateAimZoneWindowLayout() {
@@ -975,6 +1198,18 @@ class OverlayService : Service() {
                     override fun onAimSensitivitySet(sensitivity: Float) {
                         hud.aimSensitivity = sensitivity
                         ControlLayoutManager.setAimSensitivity(this@OverlayService, sensitivity)
+                        ControlLayoutManager.setAimSensX(this@OverlayService, sensitivity)
+                        ControlLayoutManager.setAimSensY(this@OverlayService, sensitivity)
+                    }
+
+                    override fun onAimProfileUpdated() {
+                        hud.aimSensitivity = ControlLayoutManager.getAimSensX(this@OverlayService)
+                        hud.isSnapToGridEnabled = ControlLayoutManager.isSnapToGridEnabled(this@OverlayService)
+                        updateLiveHudPill()
+                    }
+
+                    override fun onReleaseAllKeysPanic() {
+                        releaseAllKeysPanic()
                     }
 
                     override fun onGyroSettingsChanged() {
@@ -1054,11 +1289,14 @@ class OverlayService : Service() {
 
         if (isHudHidden) {
             settingsDrawer?.dismiss()
+            radialWheelView?.dismissImmediate()
             hud.isModifiable = false
             setAimEnabled(false)
             hud.releaseAllActiveTouches()
             touchRippleView?.clearRipples()
             InputBridge.resetAll()
+            MacroEngine.cancelAll()
+            isFreeLookActive = false
             gyroController?.paused = true
             syncCrosshairFromPrefs()
 
@@ -1068,9 +1306,10 @@ class OverlayService : Service() {
                 windowOverlayHost.updateControlWindow(view, Int.MIN_VALUE, Int.MIN_VALUE, -1, -1, logical)
             }
 
-            // Hide top floating bar & Quick-Aim chip so only the small Eye Button remains
+            // Hide top floating bar, Quick-Aim chip & Live HUD Pill so only the small Eye Button remains
             setChromeWindowVisible(topBarRoot, topBarParams, false)
             setChromeWindowVisible(quickAimButton, quickAimParams, false)
+            setChromeWindowVisible(liveHudPillRoot, liveHudPillParams, false)
             eyeButton?.setImageResource(R.drawable.ic_eye_off)
         } else {
             // Restore individual control windows according to their logical visibility
@@ -1081,6 +1320,7 @@ class OverlayService : Service() {
 
             setChromeWindowVisible(topBarRoot, topBarParams, true)
             setChromeWindowVisible(quickAimButton, quickAimParams, true)
+            updateLiveHudPill()
             eyeButton?.setImageResource(R.drawable.ic_eye_open)
             gyroController?.paused = hud.isModifiable
             syncCrosshairFromPrefs()
@@ -1103,11 +1343,15 @@ class OverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         _isRunning.value = false
+        gameWatcherJob?.cancel()
+        serviceScope.cancel()
         antiRecoilHandler.removeCallbacksAndMessages(null)
         gyroController?.stop()
         gyroController = null
         InputBridge.setSpecialActionListener(null)
         InputBridge.setMenuKeyListener(null)
+        InputBridge.setWeaponSlotListener(null)
+        MacroEngine.cancelAll()
         InputBridge.resetAll()
 
         controlLayout?.releaseAllActiveTouches()
@@ -1130,6 +1374,9 @@ class OverlayService : Service() {
         keyboardDrawer?.dismiss()
         keyboardDrawer = null
 
+        radialWheelView?.dismissImmediate()
+        radialWheelView = null
+
         try {
             ShizukuHelper.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
         } catch (_: Throwable) {}
@@ -1138,7 +1385,7 @@ class OverlayService : Service() {
             ShizukuHelper.unbindInputService()
         } catch (_: Throwable) {}
 
-        listOf(aimZoneView, crosshairView, topBarRoot, quickAimButton, eyeButton, touchRippleView).forEach { view ->
+        listOf(aimZoneView, crosshairView, topBarRoot, quickAimButton, eyeButton, touchRippleView, liveHudPillRoot).forEach { view ->
             if (view != null && view.isAttachedToWindow) {
                 try {
                     windowManager.removeViewImmediate(view)
@@ -1154,13 +1401,17 @@ class OverlayService : Service() {
         quickAimButton = null
         eyeButton = null
         touchRippleView = null
+        liveHudPillRoot = null
+        liveHudStatusText = null
         controlLayout = null
     }
 
     /**
      * Right-half invisible 3D Aim Swipe Zone layered beneath individual buttons.
      * Active only when Aim Look is toggled ON.
-     * Uses 120Hz (8ms) coalescing flush loop + sub-pixel remainder accumulator to prevent lag spikes.
+     * Uses 120Hz (8ms) coalescing flush loop + sub-pixel remainder accumulator, Per-Axis X/Y,
+     * ADS Transition Ramp, Zoom scaling, Edge-Guard bezel rejection, Inertia Glide, Quick Turn,
+     * and Touch-to-Gyro Hybrid Blending.
      */
     private inner class AimSwipeZoneView(context: Context) : View(context) {
         private var activePointerId = MotionEvent.INVALID_POINTER_ID
@@ -1178,6 +1429,21 @@ class OverlayService : Service() {
         private val aimLock = Any()
         private var pendingDx = 0f
         private var pendingDy = 0f
+        private var smoothedVelX = 0f
+        private var smoothedVelY = 0f
+        private var inertiaVelX = 0f
+        private var inertiaVelY = 0f
+        private var isInertiaGliding = false
+
+        // Quick 90/180 turn burst state
+        private var quickTurnRemainingTicks = 0
+        private var quickTurnPerTickDx = 0f
+
+        // Smooth ADS transition ramp tracking
+        private var lastAdsDown = false
+        private var adsRampStartMs = 0L
+        private var adsRampFrom = 1.0f
+
         private var isFlushLoopRunning = false
         private val flushHandler = Handler(Looper.getMainLooper())
 
@@ -1186,7 +1452,28 @@ class OverlayService : Service() {
                 if (!isFlushLoopRunning) return
                 var sendX = 0
                 var sendY = 0
+                var keepRunning = false
                 synchronized(aimLock) {
+                    if (quickTurnRemainingTicks > 0) {
+                        pendingDx += quickTurnPerTickDx
+                        quickTurnRemainingTicks--
+                        keepRunning = true
+                    }
+                    if (isInertiaGliding && activePointerId == MotionEvent.INVALID_POINTER_ID) {
+                        val decay = ControlLayoutManager.getAimInertia(context)
+                        if (decay > 0.01f && (abs(inertiaVelX) > 0.15f || abs(inertiaVelY) > 0.15f)) {
+                            pendingDx += inertiaVelX
+                            pendingDy += inertiaVelY
+                            inertiaVelX *= decay
+                            inertiaVelY *= decay
+                            keepRunning = true
+                        } else {
+                            inertiaVelX = 0f
+                            inertiaVelY = 0f
+                            isInertiaGliding = false
+                        }
+                    }
+
                     val intX = pendingDx.toInt()
                     val intY = pendingDy.toInt()
                     if (intX != 0 || intY != 0) {
@@ -1195,14 +1482,40 @@ class OverlayService : Service() {
                         pendingDx -= intX.toFloat()
                         pendingDy -= intY.toFloat()
                     }
+                    if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                        keepRunning = true
+                    }
                 }
                 if (sendX != 0 || sendY != 0) {
                     InputBridge.sendMouseMove(sendX.toFloat(), sendY.toFloat())
                 }
-                if (isFlushLoopRunning) {
+                // Update Touch-to-Gyro hybrid zoom scale continuously
+                gyroController?.adsZoomScale = computeCurrentAdsZoomMultiplier()
+
+                if (isFlushLoopRunning && keepRunning) {
                     flushHandler.postDelayed(this, 8L)
+                } else {
+                    isFlushLoopRunning = false
                 }
             }
+        }
+
+        private fun computeCurrentAdsZoomMultiplier(): Float {
+            val isAds = InputBridge.isSecondaryMouseDown
+            val now = SystemClock.uptimeMillis()
+            val adsBase = ControlLayoutManager.getAimAdsMultiplier(context)
+            val zoomFactor = ControlLayoutManager.getZoomFactorForLevel(ControlLayoutManager.getAimZoomLevel(context))
+            val target = if (isAds) adsBase * zoomFactor else 1.0f
+
+            if (isAds != lastAdsDown) {
+                adsRampFrom = if (lastAdsDown) adsBase * zoomFactor else 1.0f
+                adsRampStartMs = now
+                lastAdsDown = isAds
+            }
+            val rampMs = ControlLayoutManager.getAimAdsRampMs(context)
+            if (rampMs <= 0) return target
+            val progress = ((now - adsRampStartMs).toFloat() / rampMs.toFloat()).coerceIn(0f, 1f)
+            return adsRampFrom + (target - adsRampFrom) * progress
         }
 
         private fun startFlushLoop() {
@@ -1215,14 +1528,33 @@ class OverlayService : Service() {
         private fun stopFlushLoopAndClear() {
             isFlushLoopRunning = false
             flushHandler.removeCallbacks(flushRunnable)
+            gyroController?.isTouchSwiping = false
             synchronized(aimLock) {
                 pendingDx = 0f
                 pendingDy = 0f
+                smoothedVelX = 0f
+                smoothedVelY = 0f
+                inertiaVelX = 0f
+                inertiaVelY = 0f
+                isInertiaGliding = false
+                quickTurnRemainingTicks = 0
+                quickTurnPerTickDx = 0f
                 thumbDownDragAccumulator = 0f
             }
         }
 
         @Volatile private var thumbDownDragAccumulator = 0f
+
+        fun performSmoothQuickTurn(degrees: Int) {
+            val sensX = ControlLayoutManager.getAimSensX(context)
+            val totalCounts = degrees * 3.5f * sensX
+            val ticks = 10
+            synchronized(aimLock) {
+                quickTurnPerTickDx = totalCounts / ticks.toFloat()
+                quickTurnRemainingTicks = ticks
+            }
+            startFlushLoop()
+        }
 
         fun addRecoilTick(recoilX: Float, baseRecoilY: Float, kickBoost: Float, isInitialKick: Boolean) {
             val kickMultiplier = if (isInitialKick) (1.0f + kickBoost) else 1.0f
@@ -1259,27 +1591,43 @@ class OverlayService : Service() {
         override fun onTouchEvent(event: MotionEvent): Boolean {
             if (!isAimEnabled || isHudHidden) return false
 
-            val sensitivity = controlLayout?.aimSensitivity ?: 1.2f
+            val sensX = ControlLayoutManager.getAimSensX(context)
+            val sensY = ControlLayoutManager.getAimSensY(context)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                     val idx = event.actionIndex
+                    val px = event.getX(idx)
+                    val py = event.getY(idx)
+
+                    // Edge-Guard Margin on outer bezel edges to reject palm accidental touches
+                    val guardPx = ControlUtils.dpToPx(context, ControlLayoutManager.getAimEdgeGuardDp(context).toFloat())
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN && guardPx > 0f) {
+                        if (px > width - guardPx || py < guardPx || py > height - guardPx) {
+                            return false
+                        }
+                    }
+
                     val loc = IntArray(2)
                     getLocationOnScreen(loc)
-                    spawnTouchRipple(loc[0] + event.getX(idx), loc[1] + event.getY(idx))
+                    spawnTouchRipple(loc[0] + px, loc[1] + py)
                     if (activePointerId == MotionEvent.INVALID_POINTER_ID ||
                         event.findPointerIndex(activePointerId) < 0
                     ) {
-                        val px = event.getX(idx)
-                        val py = event.getY(idx)
                         activePointerId = event.getPointerId(idx)
                         downX = px
                         downY = py
                         lastX = px
                         lastY = py
                         isDragging = false
+                        gyroController?.isTouchSwiping = true
                         synchronized(aimLock) {
                             pendingDx = 0f
                             pendingDy = 0f
+                            smoothedVelX = 0f
+                            smoothedVelY = 0f
+                            inertiaVelX = 0f
+                            inertiaVelY = 0f
+                            isInertiaGliding = false
                             thumbDownDragAccumulator = 0f
                         }
                     }
@@ -1306,6 +1654,11 @@ class OverlayService : Service() {
                             synchronized(aimLock) {
                                 pendingDx = 0f
                                 pendingDy = 0f
+                                smoothedVelX = 0f
+                                smoothedVelY = 0f
+                                inertiaVelX = 0f
+                                inertiaVelY = 0f
+                                isInertiaGliding = false
                                 thumbDownDragAccumulator = 0f
                             }
                         }
@@ -1334,22 +1687,20 @@ class OverlayService : Service() {
                     lastY = currY
                     val maxStep = screenWidthPx * 0.45f
                     if ((dx != 0f || dy != 0f) && hypot(dx.toDouble(), dy.toDouble()) < maxStep) {
-                        var moveX = dx * sensitivity
-                        var moveY = dy * sensitivity
+                        var moveX = dx * sensX
+                        var moveY = dy * sensY
 
                         // Smart Thumb Override: track downward drag so auto-recoil doesn't double-dip
                         if (dy > 0f) {
                             synchronized(aimLock) {
-                                thumbDownDragAccumulator += (dy * sensitivity)
+                                thumbDownDragAccumulator += (dy * sensY)
                             }
                         }
 
-                        // 1. ADS / Scope Sensitivity Multiplier (when holding MB2 / secondary mouse button)
-                        if (InputBridge.isSecondaryMouseDown) {
-                            val adsMult = ControlLayoutManager.getAimAdsMultiplier(context)
-                            moveX *= adsMult
-                            moveY *= adsMult
-                        }
+                        // 1. Smooth ADS Transition Ramp & Scope Zoom Multiplier
+                        val adsZoomMult = computeCurrentAdsZoomMultiplier()
+                        moveX *= adsZoomMult
+                        moveY *= adsZoomMult
 
                         // 2. Head-Level Horizontal Stabilizer (vertical dampening)
                         val vertDampening = ControlLayoutManager.getAimVertDampening(context)
@@ -1382,6 +1733,8 @@ class OverlayService : Service() {
                         synchronized(aimLock) {
                             pendingDx += moveX
                             pendingDy += moveY
+                            smoothedVelX = smoothedVelX * 0.55f + moveX * 0.45f
+                            smoothedVelY = smoothedVelY * 0.55f + moveY * 0.45f
                         }
                         startFlushLoop()
                     }
@@ -1392,21 +1745,43 @@ class OverlayService : Service() {
                     val idx = event.actionIndex
                     val liftedId = event.getPointerId(idx)
                     if (liftedId == activePointerId) {
-                        activePointerId = MotionEvent.INVALID_POINTER_ID
-                        isDragging = false
-                        stopFlushLoopAndClear()
+                        handleSwipePointerLifted(cancel = false)
                     }
                     return true
                 }
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    activePointerId = MotionEvent.INVALID_POINTER_ID
-                    isDragging = false
-                    stopFlushLoopAndClear()
+                MotionEvent.ACTION_UP -> {
+                    handleSwipePointerLifted(cancel = false)
+                    return true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    handleSwipePointerLifted(cancel = true)
                     return true
                 }
             }
             return true
+        }
+
+        private fun handleSwipePointerLifted(cancel: Boolean) {
+            val wasDragging = isDragging
+            activePointerId = MotionEvent.INVALID_POINTER_ID
+            isDragging = false
+            gyroController?.isTouchSwiping = false
+
+            val inertia = ControlLayoutManager.getAimInertia(context)
+            if (!cancel && wasDragging && inertia > 0.01f &&
+                (abs(smoothedVelX) > 0.35f || abs(smoothedVelY) > 0.35f)
+            ) {
+                synchronized(aimLock) {
+                    inertiaVelX = smoothedVelX
+                    inertiaVelY = smoothedVelY
+                    isInertiaGliding = true
+                }
+                startFlushLoop()
+            } else {
+                stopFlushLoopAndClear()
+            }
         }
     }
 }

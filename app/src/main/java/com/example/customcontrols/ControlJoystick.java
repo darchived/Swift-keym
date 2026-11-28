@@ -139,10 +139,18 @@ public class ControlJoystick extends View implements ControlInterface {
 
         // Sprint lock indicator at top edge
         if (mProperties.forwardLock && (isTracking || sprintLocked)) {
-            float lockY = Math.max(ControlUtils.dpToPx(getContext(), 10f), cy - radius * 1.15f);
-            float lockR = ControlUtils.dpToPx(getContext(), 10f);
-            lockPaint.setColor(sprintLocked ? 0xFFFFFFFF : 0x99E0E0E0);
+            float lockY = Math.max(ControlUtils.dpToPx(getContext(), 10f), cy - radius * 1.05f);
+            float lockR = ControlUtils.dpToPx(getContext(), 11f);
+            lockPaint.setColor(sprintLocked ? 0xFFFFFFFF : 0xAAE0E0E0);
             canvas.drawCircle(cx, lockY, lockR, lockPaint);
+            if (sprintLocked) {
+                Paint txtP = new Paint(Paint.ANTI_ALIAS_FLAG);
+                txtP.setColor(0xFFFFFFFF);
+                txtP.setTextSize(ControlUtils.dpToPx(getContext(), 9f));
+                txtP.setTextAlign(Paint.Align.CENTER);
+                txtP.setFakeBoldText(true);
+                canvas.drawText("SPRINT", cx, lockY + ControlUtils.dpToPx(getContext(), 20f), txtP);
+            }
         }
 
         // Thumbstick knob
@@ -185,8 +193,9 @@ public class ControlJoystick extends View implements ControlInterface {
                     int parentH = mParentLayout.getLayoutHeightPx();
                     float maxX = Math.max(0f, parentW - getWidth());
                     float maxY = Math.max(0f, parentH - getHeight());
-                    float newX = ControlUtils.clamp(startX + dx, 0f, maxX);
-                    float newY = ControlUtils.clamp(startY + dy, 0f, maxY);
+                    float[] snapped = mParentLayout.applySnapAndAlignment(this, startX + dx, startY + dy, maxX, maxY);
+                    float newX = snapped[0];
+                    float newY = snapped[1];
                     mParentLayout.setManagedViewPosition(this, newX, newY);
                     mProperties.setStaticPosition(newX, newY, parentW, parentH);
                     mParentLayout.syncSelectionOverlays();
@@ -194,7 +203,9 @@ public class ControlJoystick extends View implements ControlInterface {
                 return true;
 
             case MotionEvent.ACTION_UP:
-                if (!hasMoved) {
+            case MotionEvent.ACTION_CANCEL:
+                mParentLayout.clearAlignmentGuides();
+                if (!hasMoved && event.getActionMasked() == MotionEvent.ACTION_UP) {
                     mParentLayout.selectControl(this, true);
                 } else {
                     mParentLayout.notifyLayoutModified();

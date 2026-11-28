@@ -1,5 +1,8 @@
 package com.example
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -37,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
@@ -50,10 +54,12 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -77,6 +83,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,10 +105,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.customcontrols.ControlLayoutManager
 import com.example.customcontrols.LayoutProfileInfo
+import com.example.customcontrols.ShareBackupManager
 import com.example.input.InputBridge
 import com.example.input.ShizukuHelper
 import com.example.overlay.OverlayService
 import com.example.ui.ChangelogDialog
+import com.example.ui.GameLauncherSection
+import com.example.ui.MacroBuilderDialog
+import com.example.ui.PrivacySafetyDialog
 import com.example.ui.theme.BgDarkGrey
 import com.example.ui.theme.BorderGrey
 import com.example.ui.theme.JetBrainsMonoFamily
@@ -147,23 +158,38 @@ class MainActivity : ComponentActivity() {
 
         var layouts by remember { mutableStateOf(ControlLayoutManager.listLayouts(context)) }
         var activeLayoutName by remember { mutableStateOf(ControlLayoutManager.getActiveLayoutName(context)) }
-        var aimSensitivity by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensitivity(context)) }
+        var aimSensX by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensX(context)) }
+        var aimSensY by remember { mutableFloatStateOf(ControlLayoutManager.getAimSensY(context)) }
+        var aimZoomLevel by remember { mutableIntStateOf(ControlLayoutManager.getAimZoomLevel(context)) }
+        var aimInertia by remember { mutableFloatStateOf(ControlLayoutManager.getAimInertia(context)) }
+        var aimAdsRampMs by remember { mutableIntStateOf(ControlLayoutManager.getAimAdsRampMs(context)) }
+        var aimEdgeGuardDp by remember { mutableIntStateOf(ControlLayoutManager.getAimEdgeGuardDp(context)) }
         var adsMultiplier by remember { mutableFloatStateOf(ControlLayoutManager.getAimAdsMultiplier(context)) }
         var stickySlowdown by remember { mutableFloatStateOf(ControlLayoutManager.getAimStickySlowdown(context)) }
         var vertDampening by remember { mutableFloatStateOf(ControlLayoutManager.getAimVertDampening(context)) }
         var speedAccelEnabled by remember { mutableStateOf(ControlLayoutManager.isAimSpeedAccelEnabled(context)) }
         var speedAccelMultiplier by remember { mutableFloatStateOf(ControlLayoutManager.getAimSpeedAccelMultiplier(context)) }
-        var antiRecoilY by remember { mutableFloatStateOf(ControlLayoutManager.getAimAntiRecoilY(context)) }
-        var antiRecoilX by remember { mutableFloatStateOf(ControlLayoutManager.getAimAntiRecoilX(context)) }
+        var activeRecoilSlot by remember { mutableIntStateOf(ControlLayoutManager.getActiveRecoilSlot(context)) }
+        var recoilAdsOnly by remember { mutableStateOf(ControlLayoutManager.isRecoilAdsOnly(context)) }
+        var recoilEarlyY by remember(activeRecoilSlot) { mutableFloatStateOf(ControlLayoutManager.getRecoilEarlyY(context, activeRecoilSlot)) }
+        var recoilMidY by remember(activeRecoilSlot) { mutableFloatStateOf(ControlLayoutManager.getRecoilMidY(context, activeRecoilSlot)) }
+        var recoilLateY by remember(activeRecoilSlot) { mutableFloatStateOf(ControlLayoutManager.getRecoilLateY(context, activeRecoilSlot)) }
+        var antiRecoilX by remember(activeRecoilSlot) { mutableFloatStateOf(ControlLayoutManager.getRecoilDriftX(context, activeRecoilSlot)) }
         var initialKickBoost by remember { mutableFloatStateOf(ControlLayoutManager.getAimInitialKickBoost(context)) }
         var globalOpacity by remember { mutableFloatStateOf(ControlLayoutManager.getGlobalOpacity(context)) }
         var touchRippleEnabled by remember { mutableStateOf(ControlLayoutManager.isTouchRippleEnabled(context)) }
         var gyroEnabled by remember { mutableStateOf(ControlLayoutManager.isGyroEnabled(context)) }
         var crosshairEnabled by remember { mutableStateOf(ControlLayoutManager.isCrosshairEnabled(context)) }
         var hapticEnabled by remember { mutableStateOf(ControlLayoutManager.isHapticEnabled(context)) }
+        var liveHudPillEnabled by remember { mutableStateOf(ControlLayoutManager.isLiveHudPillEnabled(context)) }
+        var autoHideOutsideGame by remember { mutableStateOf(ControlLayoutManager.isAutoHideOutsideGame(context)) }
+        var macroCount by remember { mutableIntStateOf(ControlLayoutManager.getMacros(context).size) }
         var previewJson by remember { mutableStateOf<String?>(null) }
         var showFolderDialog by remember { mutableStateOf(false) }
         var showRestrictedGuideDialog by remember { mutableStateOf(false) }
+        var showPrivacyDialog by remember { mutableStateOf(false) }
+        var showMacroBuilderDialog by remember { mutableStateOf(false) }
+        var showImportShareCodeDialog by remember { mutableStateOf(false) }
         var showNewPresetDialog by remember { mutableStateOf(false) }
         var showChangelogDialog by remember {
             mutableStateOf(
@@ -176,6 +202,16 @@ class MainActivity : ComponentActivity() {
             ControlLayoutManager.getControlMapDir(context).absolutePath
         }
 
+        fun notifyAimProfileSync() {
+            if (isOverlayRunning) {
+                context.startService(
+                    Intent(context, OverlayService::class.java).apply {
+                        action = OverlayService.ACTION_UPDATE_AIM_PROFILE
+                    }
+                )
+            }
+        }
+
         fun refreshAll() {
             hasOverlayPermission = Settings.canDrawOverlays(context)
             ShizukuHelper.refreshState()
@@ -184,20 +220,33 @@ class MainActivity : ComponentActivity() {
             }
             layouts = ControlLayoutManager.listLayouts(context)
             activeLayoutName = ControlLayoutManager.getActiveLayoutName(context)
-            aimSensitivity = ControlLayoutManager.getAimSensitivity(context)
+            aimSensX = ControlLayoutManager.getAimSensX(context)
+            aimSensY = ControlLayoutManager.getAimSensY(context)
+            aimZoomLevel = ControlLayoutManager.getAimZoomLevel(context)
+            aimInertia = ControlLayoutManager.getAimInertia(context)
+            aimAdsRampMs = ControlLayoutManager.getAimAdsRampMs(context)
+            aimEdgeGuardDp = ControlLayoutManager.getAimEdgeGuardDp(context)
             adsMultiplier = ControlLayoutManager.getAimAdsMultiplier(context)
             stickySlowdown = ControlLayoutManager.getAimStickySlowdown(context)
             vertDampening = ControlLayoutManager.getAimVertDampening(context)
             speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
             speedAccelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
-            antiRecoilY = ControlLayoutManager.getAimAntiRecoilY(context)
-            antiRecoilX = ControlLayoutManager.getAimAntiRecoilX(context)
+            val slot = ControlLayoutManager.getActiveRecoilSlot(context)
+            activeRecoilSlot = slot
+            recoilAdsOnly = ControlLayoutManager.isRecoilAdsOnly(context)
+            recoilEarlyY = ControlLayoutManager.getRecoilEarlyY(context, slot)
+            recoilMidY = ControlLayoutManager.getRecoilMidY(context, slot)
+            recoilLateY = ControlLayoutManager.getRecoilLateY(context, slot)
+            antiRecoilX = ControlLayoutManager.getRecoilDriftX(context, slot)
             initialKickBoost = ControlLayoutManager.getAimInitialKickBoost(context)
             globalOpacity = ControlLayoutManager.getGlobalOpacity(context)
             touchRippleEnabled = ControlLayoutManager.isTouchRippleEnabled(context)
             gyroEnabled = ControlLayoutManager.isGyroEnabled(context)
             crosshairEnabled = ControlLayoutManager.isCrosshairEnabled(context)
             hapticEnabled = ControlLayoutManager.isHapticEnabled(context)
+            liveHudPillEnabled = ControlLayoutManager.isLiveHudPillEnabled(context)
+            autoHideOutsideGame = ControlLayoutManager.isAutoHideOutsideGame(context)
+            macroCount = ControlLayoutManager.getMacros(context).size
         }
 
         DisposableEffect(lifecycleOwner) {
@@ -271,6 +320,45 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val exportFullBackupLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json")
+        ) { uri: Uri? ->
+            if (uri != null) {
+                try {
+                    val json = ShareBackupManager.exportFullBackupJson(context)
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(json) }
+                    Toast.makeText(context, "Exported full .skm backup bundle", Toast.LENGTH_SHORT).show()
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Backup failed: ${t.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        val importFullBackupLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri: Uri? ->
+            if (uri != null) {
+                try {
+                    val content = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    if (!content.isNullOrBlank()) {
+                        val importedPresets = ShareBackupManager.importFullBackupJson(context, content)
+                        refreshAll()
+                        notifyAimProfileSync()
+                        if (isOverlayRunning) {
+                            context.startService(
+                                Intent(context, OverlayService::class.java).apply {
+                                    action = OverlayService.ACTION_RELOAD_LAYOUT
+                                }
+                            )
+                        }
+                        Toast.makeText(context, "Restored $importedPresets presets & settings", Toast.LENGTH_LONG).show()
+                    }
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Invalid .skm backup: ${t.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = BgDarkGrey,
@@ -335,7 +423,7 @@ class MainActivity : ComponentActivity() {
                                         border = BorderStroke(1.dp, BorderGrey)
                                     ) {
                                         Text(
-                                            text = "v${BuildConfig.VERSION_NAME}",
+                                            text = if (BuildConfig.VERSION_NAME.startsWith("v")) BuildConfig.VERSION_NAME else "v${BuildConfig.VERSION_NAME}",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = SoftWhite,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -351,6 +439,13 @@ class MainActivity : ComponentActivity() {
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { showPrivacyDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Filled.VerifiedUser,
+                                    contentDescription = "Privacy and Safety",
+                                    tint = PureWhite
+                                )
+                            }
                             OutlinedButton(
                                 onClick = { showChangelogDialog = true },
                                 modifier = Modifier
@@ -370,7 +465,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Changelog",
+                                    text = "Release",
                                     style = MaterialTheme.typography.labelMedium
                                 )
                             }
@@ -509,6 +604,89 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // Per-App Game Library & Auto-Switch Hub
+                    GameLauncherSection(
+                        layouts = layouts,
+                        autoHideOutsideGame = autoHideOutsideGame,
+                        onToggleAutoHideOutsideGame = { enabled ->
+                            autoHideOutsideGame = enabled
+                            ControlLayoutManager.setAutoHideOutsideGame(context, enabled)
+                            notifyAimProfileSync()
+                        },
+                        onLaunchLinkedGame = { link ->
+                            if (!Settings.canDrawOverlays(context)) {
+                                Toast.makeText(context, "Grant Display Over Other Apps first.", Toast.LENGTH_SHORT).show()
+                                return@GameLauncherSection
+                            }
+                            ControlLayoutManager.setActiveLayoutName(context, link.presetFileName)
+                            activeLayoutName = link.presetFileName
+                            val svcIntent = Intent(context, OverlayService::class.java).apply {
+                                action = OverlayService.ACTION_START
+                                putExtra(OverlayService.EXTRA_PRESET_FILE, link.presetFileName)
+                                putExtra(OverlayService.EXTRA_TARGET_PACKAGE, link.packageName)
+                            }
+                            ContextCompat.startForegroundService(context, svcIntent)
+                            val launchIntent = context.packageManager.getLaunchIntentForPackage(link.packageName)
+                            if (launchIntent != null) {
+                                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(launchIntent)
+                            } else {
+                                Toast.makeText(context, "Unable to launch ${link.appName}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+
+                    // Pro Macro & Combo Builder Quick Entry Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceGrey),
+                        border = BorderStroke(1.dp, BorderGrey),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Bolt,
+                                    contentDescription = "Pro Macro Builder",
+                                    tint = PureWhite,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Pro Macro & Combo Builder",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "$macroCount saved macros · Live Recorder, Rapid-Fire & Conditions",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MutedGrey
+                                    )
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { showMacroBuilderDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, PureWhite.copy(alpha = 0.65f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = SurfaceElevatedGrey,
+                                    contentColor = PureWhite
+                                )
+                            ) {
+                                Text("Open", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
                     // Setup & Permissions Checklist
                     Card(
                         colors = CardDefaults.cardColors(containerColor = SurfaceGrey),
@@ -617,10 +795,10 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Build,
-                                        contentDescription = "Fix Restricted Settings"
+                                        contentDescription = "Unlock Restricted Settings"
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Text("Fix Restricted Settings (App Info ⋮)")
+                                    Text("Unlock Restricted Settings (App Info ⋮)")
                                 }
 
                                 if (isShizukuAlive && hasShizukuPerm) {
@@ -687,30 +865,25 @@ class MainActivity : ComponentActivity() {
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Swipe-to-Aim Sensitivity",
+                                        text = "Horizontal Aim Sens (X)",
                                         style = MaterialTheme.typography.titleMedium,
                                         color = PureWhite
                                     )
                                 }
                                 Text(
-                                    text = String.format(Locale.US, "%.1fx", aimSensitivity),
+                                    text = String.format(Locale.US, "%.1fx", aimSensX),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = PureWhite
                                 )
                             }
 
                             Slider(
-                                value = aimSensitivity,
+                                value = aimSensX,
                                 onValueChange = { next ->
-                                    aimSensitivity = next
+                                    aimSensX = next
                                     ControlLayoutManager.setAimSensitivity(context, next)
-                                    if (isOverlayRunning) {
-                                        context.startService(
-                                            Intent(context, OverlayService::class.java).apply {
-                                                action = OverlayService.ACTION_UPDATE_SENSITIVITY
-                                            }
-                                        )
-                                    }
+                                    ControlLayoutManager.setAimSensX(context, next)
+                                    notifyAimProfileSync()
                                 },
                                 valueRange = 0.2f..5.0f,
                                 colors = SliderDefaults.colors(
@@ -719,8 +892,78 @@ class MainActivity : ComponentActivity() {
                                     inactiveTrackColor = BorderGrey
                                 )
                             )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Vertical Aim Sens (Y)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = String.format(Locale.US, "%.1fx", aimSensY),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+
+                            Slider(
+                                value = aimSensY,
+                                onValueChange = { next ->
+                                    aimSensY = next
+                                    ControlLayoutManager.setAimSensY(context, next)
+                                    notifyAimProfileSync()
+                                },
+                                valueRange = 0.2f..5.0f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = PureWhite,
+                                    activeTrackColor = PureWhite,
+                                    inactiveTrackColor = BorderGrey
+                                )
+                            )
+
                             Text(
-                                text = "Swiping the Aim Zone injects relative mouse deltas (AXIS_RELATIVE_X/Y) with 120Hz coalescing for 360° FPS camera turning.",
+                                text = "Scope Zoom Preset Multiplier",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MutedGrey
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(0 to "1x Hip/Holo", 1 to "2x–4x Mid", 2 to "6x+ Sniper").forEach { (lvl, lbl) ->
+                                    val sel = aimZoomLevel == lvl
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                aimZoomLevel = lvl
+                                                ControlLayoutManager.setAimZoomLevel(context, lvl)
+                                                notifyAimProfileSync()
+                                            },
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (sel) PureWhite else SurfaceElevatedGrey,
+                                        border = BorderStroke(1.dp, if (sel) PureWhite else BorderGrey)
+                                    ) {
+                                        Text(
+                                            text = lbl,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (sel) BgDarkGrey else PureWhite,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "Pure relative mouse deltas (REL_X/REL_Y) at 120Hz with Edge-Guard, ADS ramp & Touch-to-Gyro hybrid blending.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MutedGrey
                             )
@@ -883,6 +1126,85 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "ADS Transition Ramp",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = "${aimAdsRampMs}ms",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = aimAdsRampMs.toFloat(),
+                                onValueChange = { next ->
+                                    aimAdsRampMs = ((next.toInt() / 10) * 10).coerceIn(0, 250)
+                                    ControlLayoutManager.setAimAdsRampMs(context, aimAdsRampMs)
+                                },
+                                valueRange = 0f..250f,
+                                colors = SliderDefaults.colors(thumbColor = PureWhite, activeTrackColor = PureWhite, inactiveTrackColor = BorderGrey)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Aim Inertia Glide",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = "${Math.round(aimInertia * 100f)}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = aimInertia,
+                                onValueChange = { next ->
+                                    aimInertia = next
+                                    ControlLayoutManager.setAimInertia(context, next)
+                                },
+                                valueRange = 0f..0.85f,
+                                colors = SliderDefaults.colors(thumbColor = PureWhite, activeTrackColor = PureWhite, inactiveTrackColor = BorderGrey)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Edge-Guard Bezel Margin",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = PureWhite
+                                )
+                                Text(
+                                    text = "${aimEdgeGuardDp}dp",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = PureWhite
+                                )
+                            }
+                            Slider(
+                                value = aimEdgeGuardDp.toFloat(),
+                                onValueChange = { next ->
+                                    aimEdgeGuardDp = next.toInt().coerceIn(0, 20)
+                                    ControlLayoutManager.setAimEdgeGuardDp(context, aimEdgeGuardDp)
+                                },
+                                valueRange = 0f..20f,
+                                colors = SliderDefaults.colors(thumbColor = PureWhite, activeTrackColor = PureWhite, inactiveTrackColor = BorderGrey)
+                            )
+
+                            // 3-Stage Weapon Slot Recoil Engine
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -890,14 +1212,67 @@ class MainActivity : ComponentActivity() {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Vertical Anti-Recoil (Sub-Pixel)",
+                                        text = "3-Stage Anti-Recoil (Slot G$activeRecoilSlot)",
                                         style = MaterialTheme.typography.titleMedium,
                                         color = PureWhite
                                     )
                                     Text(
-                                        text = if (antiRecoilY <= 0.001f) "OFF (0.00)" else String.format(Locale.US, "%.2f", antiRecoilY),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = PureWhite
+                                        text = String.format(Locale.US, "%.2f / %.2f / %.2f", recoilEarlyY, recoilMidY, recoilLateY),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SoftWhite
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf(1 to "Weapon Slot 1 (G1)", 2 to "Weapon Slot 2 (G2)").forEach { (slot, lbl) ->
+                                        val isSel = activeRecoilSlot == slot
+                                        Surface(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable {
+                                                    activeRecoilSlot = slot
+                                                    ControlLayoutManager.setActiveRecoilSlot(context, slot)
+                                                    recoilEarlyY = ControlLayoutManager.getRecoilEarlyY(context, slot)
+                                                    recoilMidY = ControlLayoutManager.getRecoilMidY(context, slot)
+                                                    recoilLateY = ControlLayoutManager.getRecoilLateY(context, slot)
+                                                    antiRecoilX = ControlLayoutManager.getRecoilDriftX(context, slot)
+                                                    notifyAimProfileSync()
+                                                },
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isSel) PureWhite else SurfaceElevatedGrey,
+                                            border = BorderStroke(1.dp, if (isSel) PureWhite else BorderGrey)
+                                        ) {
+                                            Text(
+                                                text = lbl,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSel) BgDarkGrey else PureWhite,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(vertical = 6.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Only Pull Recoil While ADS", style = MaterialTheme.typography.bodySmall, color = SoftWhite)
+                                    Switch(
+                                        checked = recoilAdsOnly,
+                                        onCheckedChange = { checked ->
+                                            recoilAdsOnly = checked
+                                            ControlLayoutManager.setRecoilAdsOnly(context, checked)
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = BgDarkGrey, checkedTrackColor = PureWhite)
                                     )
                                 }
 
@@ -915,14 +1290,18 @@ class MainActivity : ComponentActivity() {
                                         "High (0.65)" to 0.65f
                                     )
                                     presets.forEach { (label, value) ->
-                                        val isSelected = Math.abs(antiRecoilY - value) < 0.04f
+                                        val isSelected = Math.abs(recoilEarlyY - value) < 0.04f
                                         Surface(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .clip(RoundedCornerShape(6.dp))
                                                 .clickable {
-                                                    antiRecoilY = value
-                                                    ControlLayoutManager.setAimAntiRecoilY(context, value)
+                                                    recoilEarlyY = value
+                                                    recoilMidY = value * 0.90f
+                                                    recoilLateY = value * 0.75f
+                                                    ControlLayoutManager.setRecoilEarlyY(context, activeRecoilSlot, recoilEarlyY)
+                                                    ControlLayoutManager.setRecoilMidY(context, activeRecoilSlot, recoilMidY)
+                                                    ControlLayoutManager.setRecoilLateY(context, activeRecoilSlot, recoilLateY)
                                                 },
                                             shape = RoundedCornerShape(6.dp),
                                             color = if (isSelected) PureWhite else SurfaceElevatedGrey,
@@ -940,19 +1319,52 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
+                                Text(
+                                    text = "Stage 1 Early (0–350ms): ${String.format(Locale.US, "%.2f", recoilEarlyY)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = SoftWhite
+                                )
                                 Slider(
-                                    value = antiRecoilY,
+                                    value = recoilEarlyY,
                                     onValueChange = { next ->
-                                        antiRecoilY = next
-                                        ControlLayoutManager.setAimAntiRecoilY(context, next)
+                                        recoilEarlyY = next
+                                        ControlLayoutManager.setRecoilEarlyY(context, activeRecoilSlot, next)
                                     },
                                     valueRange = 0.00f..3.00f,
                                     steps = 59,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = PureWhite,
-                                        activeTrackColor = PureWhite,
-                                        inactiveTrackColor = BorderGrey
-                                    )
+                                    colors = SliderDefaults.colors(thumbColor = PureWhite, activeTrackColor = PureWhite, inactiveTrackColor = BorderGrey)
+                                )
+
+                                Text(
+                                    text = "Stage 2 Mid (350–1200ms): ${String.format(Locale.US, "%.2f", recoilMidY)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = SoftWhite
+                                )
+                                Slider(
+                                    value = recoilMidY,
+                                    onValueChange = { next ->
+                                        recoilMidY = next
+                                        ControlLayoutManager.setRecoilMidY(context, activeRecoilSlot, next)
+                                    },
+                                    valueRange = 0.00f..3.00f,
+                                    steps = 59,
+                                    colors = SliderDefaults.colors(thumbColor = PureWhite, activeTrackColor = PureWhite, inactiveTrackColor = BorderGrey)
+                                )
+
+                                Text(
+                                    text = "Stage 3 Late (1200ms+): ${String.format(Locale.US, "%.2f", recoilLateY)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = SoftWhite
+                                )
+                                Slider(
+                                    value = recoilLateY,
+                                    onValueChange = { next ->
+                                        recoilLateY = next
+                                        ControlLayoutManager.setRecoilLateY(context, activeRecoilSlot, next)
+                                    },
+                                    valueRange = 0.00f..3.00f,
+                                    steps = 59,
+                                    colors = SliderDefaults.colors(thumbColor = PureWhite, activeTrackColor = PureWhite, inactiveTrackColor = BorderGrey)
                                 )
                             }
 
@@ -980,7 +1392,7 @@ class MainActivity : ComponentActivity() {
                                 value = antiRecoilX,
                                 onValueChange = { next ->
                                     antiRecoilX = next
-                                    ControlLayoutManager.setAimAntiRecoilX(context, next)
+                                    ControlLayoutManager.setRecoilDriftX(context, activeRecoilSlot, next)
                                 },
                                 valueRange = -1.50f..1.50f,
                                 steps = 59,
@@ -1224,6 +1636,39 @@ class MainActivity : ComponentActivity() {
                                     )
                                 )
                             }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Live Input HUD Pill",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = PureWhite
+                                    )
+                                    Text(
+                                        text = "Compact status pill showing Shizuku, Slot G1/G2 & Panic release",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MutedGrey
+                                    )
+                                }
+                                Switch(
+                                    checked = liveHudPillEnabled,
+                                    onCheckedChange = { enabled ->
+                                        liveHudPillEnabled = enabled
+                                        ControlLayoutManager.setLiveHudPillEnabled(context, enabled)
+                                        notifyAimProfileSync()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = BgDarkGrey,
+                                        checkedTrackColor = PureWhite,
+                                        uncheckedThumbColor = MutedGrey,
+                                        uncheckedTrackColor = BgDarkGrey
+                                    )
+                                )
+                            }
                         }
                     }
 
@@ -1323,6 +1768,73 @@ class MainActivity : ComponentActivity() {
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Export", maxLines = 1)
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val loaded = ControlLayoutManager.loadLayoutByName(context, activeLayoutName)
+                                        val code = ShareBackupManager.encodeShareCode(loaded)
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        cm.setPrimaryClip(ClipData.newPlainText("SwiftKeyM Preset", code))
+                                        Toast.makeText(context, "Copied SKM1:// share code", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, BorderGrey),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PureWhite)
+                                ) {
+                                    Icon(Icons.Filled.Share, contentDescription = "Copy Share Code", modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Copy SKM1://", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showImportShareCodeDialog = true },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, BorderGrey),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PureWhite)
+                                ) {
+                                    Icon(Icons.Filled.Download, contentDescription = "Paste Share Code", modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Paste Code", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { exportFullBackupLauncher.launch("swiftkeym_backup_v100.skm.json") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, BorderGrey),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftWhite)
+                                ) {
+                                    Text("Backup All (.skm)", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                }
+                                OutlinedButton(
+                                    onClick = { importFullBackupLauncher.launch(arrayOf("application/json", "*/*")) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, BorderGrey),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftWhite)
+                                ) {
+                                    Text("Restore Backup", style = MaterialTheme.typography.labelSmall, maxLines = 1)
                                 }
                             }
 
@@ -1643,6 +2155,75 @@ class MainActivity : ComponentActivity() {
                 onDismiss = {
                     ControlLayoutManager.setLastSeenChangelogVersionCode(context, BuildConfig.VERSION_CODE)
                     showChangelogDialog = false
+                }
+            )
+        }
+
+        if (showPrivacyDialog) {
+            PrivacySafetyDialog(onDismiss = { showPrivacyDialog = false })
+        }
+
+        if (showMacroBuilderDialog) {
+            MacroBuilderDialog(onDismiss = {
+                showMacroBuilderDialog = false
+                macroCount = ControlLayoutManager.getMacros(context).size
+            })
+        }
+
+        if (showImportShareCodeDialog) {
+            var codeInput by remember { mutableStateOf("") }
+            var nameInput by remember { mutableStateOf("shared_preset") }
+            AlertDialog(
+                onDismissRequest = { showImportShareCodeDialog = false },
+                containerColor = SurfaceGrey,
+                title = { Text("Import SKM1:// Share Code", style = MaterialTheme.typography.titleMedium, color = PureWhite) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = nameInput,
+                            onValueChange = { nameInput = it },
+                            label = { Text("Save Preset As") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = codeInput,
+                            onValueChange = { codeInput = it },
+                            label = { Text("Paste SKM1://... or JSON") },
+                            modifier = Modifier.fillMaxWidth().height(130.dp)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        try {
+                            val decoded = ShareBackupManager.decodeShareCode(codeInput)
+                            val savedFile = ControlLayoutManager.saveLayoutAs(
+                                context,
+                                nameInput.ifBlank { "shared_${System.currentTimeMillis()}" },
+                                decoded
+                            )
+                            refreshAll()
+                            if (isOverlayRunning) {
+                                context.startService(
+                                    Intent(context, OverlayService::class.java).apply {
+                                        action = OverlayService.ACTION_RELOAD_LAYOUT
+                                    }
+                                )
+                            }
+                            showImportShareCodeDialog = false
+                            Toast.makeText(context, "Imported $savedFile", Toast.LENGTH_SHORT).show()
+                        } catch (t: Throwable) {
+                            Toast.makeText(context, "Invalid share code: ${t.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }) {
+                        Text("Import", color = PureWhite, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showImportShareCodeDialog = false }) {
+                        Text("Cancel", color = MutedGrey)
+                    }
                 }
             )
         }
