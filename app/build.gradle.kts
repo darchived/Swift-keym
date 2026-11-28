@@ -16,8 +16,8 @@ android {
     applicationId = "com.stardevs.swiftkeym"
     minSdk = 26
     targetSdk = 34
-    versionCode = 4
-    versionName = "1.3.0"
+    versionCode = 5
+    versionName = "1.4.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -33,10 +33,10 @@ android {
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      storeFile = file("${rootDir}/swiftkeym-fixed.jks")
+      storePassword = "SwiftKeyM_Fixed_2026"
+      keyAlias = "swiftkeym"
+      keyPassword = "SwiftKeyM_Fixed_2026"
     }
   }
 

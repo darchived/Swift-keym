@@ -289,6 +289,21 @@ public class EditControlSideDialog {
                     parentLayout.getImagePickListener().onRequestImagePick(savedPath -> {
                         if (savedPath != null) {
                             data.iconPath = savedPath;
+                            try {
+                                android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(savedPath);
+                                if (bmp != null) {
+                                    int maxDim = 256;
+                                    float scale = Math.min((float) maxDim / bmp.getWidth(), (float) maxDim / bmp.getHeight());
+                                    if (scale < 1.0f) {
+                                        int w = Math.round(bmp.getWidth() * scale);
+                                        int h = Math.round(bmp.getHeight() * scale);
+                                        bmp = android.graphics.Bitmap.createScaledBitmap(bmp, w, h, true);
+                                    }
+                                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                                    bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, baos);
+                                    data.imageBase64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP);
+                                }
+                            } catch (Throwable ignored) {}
                             target.updateProperties();
                             parentLayout.notifyLayoutModified();
                         }
@@ -304,6 +319,7 @@ public class EditControlSideDialog {
             clearImgBtn.setLayoutParams(ciLp);
             clearImgBtn.setOnClickListener(v -> {
                 data.iconPath = "";
+                data.imageBase64 = "";
                 target.updateProperties();
                 parentLayout.notifyLayoutModified();
             });

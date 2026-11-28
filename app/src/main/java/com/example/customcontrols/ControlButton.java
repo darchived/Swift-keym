@@ -123,11 +123,9 @@ public class ControlButton extends Button implements ControlInterface {
 
         Bitmap customBitmap = loadCustomBitmap();
         if (customBitmap != null) {
-            BitmapDrawable bd = new BitmapDrawable(getResources(), customBitmap);
-            bd.setGravity(Gravity.CENTER);
+            android.graphics.drawable.BitmapDrawable bd = new android.graphics.drawable.BitmapDrawable(getResources(), customBitmap);
+            bd.setGravity(Gravity.FILL);
             LayerDrawable layer = new LayerDrawable(new Drawable[]{gd, bd});
-            int inset = (int) ControlUtils.dpToPx(getContext(), 6f);
-            layer.setLayerInset(1, inset, inset, inset, inset);
             setBackground(layer);
         } else {
             setBackground(gd);
@@ -135,11 +133,19 @@ public class ControlButton extends Button implements ControlInterface {
     }
 
     private Bitmap loadCustomBitmap() {
+        String base64 = mProperties.imageBase64 != null ? mProperties.imageBase64 : "";
+        if (!base64.isEmpty() && cachedIconBitmap == null) {
+            try {
+                byte[] decoded = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+                cachedIconBitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+                return cachedIconBitmap;
+            } catch (Throwable ignored) {}
+        }
         String path = mProperties.iconPath != null ? mProperties.iconPath : "";
         if (path.isEmpty()) {
             cachedIconPath = "";
-            cachedIconBitmap = null;
-            return null;
+            if (base64.isEmpty()) cachedIconBitmap = null;
+            return cachedIconBitmap;
         }
         if (path.equals(cachedIconPath) && cachedIconBitmap != null) {
             return cachedIconBitmap;
@@ -150,7 +156,7 @@ public class ControlButton extends Button implements ControlInterface {
             cachedIconPath = path;
             return cachedIconBitmap;
         }
-        return null;
+        return cachedIconBitmap;
     }
 
     private int blendHighlight(int color) {

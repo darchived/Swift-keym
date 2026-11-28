@@ -43,8 +43,19 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.3.0",
+        version = "v1.4.0",
         tag = "Latest",
+        items = listOf(
+            "Configured fixed static signing key (swiftkeym-fixed.jks) and debug assemble targets for flawless in-place updates without install errors.",
+            "Registered full Linux keyboard keycodes (1..248) in /dev/uinput so all keyboard buttons and WASD joysticks inject correctly.",
+            "Fixed Eye Show/Hide button to retain button view states in WindowManager without permanent removal.",
+            "Embedded custom button icons as portable Base64 strings in JSON controlmap exports so images never break across installs.",
+            "Auto-fit & scale custom button images using FIT_XY scaling to perfectly match button dimensions."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.3.0",
+        tag = "Gear Menu & uinput",
         items = listOf(
             "Replaced overlay AlertDialogs with a native WindowManager Floating Settings Drawer so tapping the top Gear (⚙) menu never crashes or resets the HUD.",
             "Added FLAG_SPLIT_TOUCH across every floating window and multi-pointer tracking on Shoot/Scope/Joystick/Aim Zone so holding fire or ADS never freezes camera aiming.",

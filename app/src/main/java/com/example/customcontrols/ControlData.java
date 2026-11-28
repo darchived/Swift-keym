@@ -39,6 +39,7 @@ public class ControlData {
     public boolean displayInMenu = true;
     public boolean isDynamicBtn = false;
     public boolean macroSequential = false;
+    public String imageBase64 = "";
 
     public ControlData() {
     }
