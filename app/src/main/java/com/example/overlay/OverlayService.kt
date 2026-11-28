@@ -117,6 +117,7 @@ class OverlayService : Service() {
 
     // Native WindowManager Floating Settings Drawer (no Dialog/AlertDialog)
     private var settingsDrawer: FloatingSettingsDrawerView? = null
+    private var keyboardDrawer: FloatingKeyboardDrawerView? = null
 
     // Visual-only (strictly FLAG_NOT_TOUCHABLE) Touch Ripple & Center Crosshair windows
     private var touchRippleView: TouchRippleOverlayView? = null
@@ -422,6 +423,7 @@ class OverlayService : Service() {
                 LwjglGlfwKeycode.SPECIALBTN_TOGGLECTRL -> eyeButton?.post { toggleHudVisibility() }
                 LwjglGlfwKeycode.SPECIALBTN_MENU -> topBarRoot?.post { toggleEditMode() }
                 LwjglGlfwKeycode.SPECIALBTN_TOGGLEGYRO -> topBarRoot?.post { toggleGyroFromOverlay() }
+                LwjglGlfwKeycode.SPECIALBTN_KEYBOARD -> topBarRoot?.post { toggleFloatingKeyboard() }
             }
         }
 
@@ -657,12 +659,25 @@ class OverlayService : Service() {
         }
         redoPillBtn = redoBtn
 
+        val keyboardBtn = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_edit)
+            setColorFilter(0xFFFFFFFF.toInt())
+            setBackgroundColor(Color.TRANSPARENT)
+            contentDescription = "Toggle Virtual QWERTY Keyboard"
+            val p = ControlUtils.dpToPx(this@OverlayService, 6f).toInt()
+            setPadding(p, p, p, p)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setOnClickListener { toggleFloatingKeyboard() }
+            setOnTouchListener(dragListener)
+        }
+
         val gyroLp = LinearLayout.LayoutParams(btnSz, btnSz).apply {
             marginEnd = ControlUtils.dpToPx(this@OverlayService, 4f).toInt()
         }
         bar.addView(gyroBtn, gyroLp)
         bar.addView(undoBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.addView(cogBtn, LinearLayout.LayoutParams(btnSz, btnSz))
+        bar.addView(keyboardBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.addView(redoBtn, LinearLayout.LayoutParams(btnSz, btnSz))
         bar.setOnTouchListener(dragListener)
 
@@ -882,6 +897,19 @@ class OverlayService : Service() {
         }
     }
 
+    private fun toggleFloatingKeyboard() {
+        if (keyboardDrawer == null) {
+            keyboardDrawer = FloatingKeyboardDrawerView(
+                context = this,
+                windowManager = windowManager,
+                onClose = {
+                    keyboardDrawer = null
+                }
+            )
+        }
+        keyboardDrawer?.toggle()
+    }
+
     private fun toggleSettingsDrawer() {
         val hud = controlLayout ?: return
         try {
@@ -902,6 +930,10 @@ class OverlayService : Service() {
 
                     override fun onToggleHideHud() {
                         toggleHudVisibility()
+                    }
+
+                    override fun onToggleKeyboard() {
+                        toggleFloatingKeyboard()
                     }
 
                     override fun onAimSensitivitySet(sensitivity: Float) {
@@ -1057,6 +1089,13 @@ class OverlayService : Service() {
 
         settingsDrawer?.dismiss()
         settingsDrawer = null
+
+        keyboardDrawer?.dismiss()
+        keyboardDrawer = null
+
+        try {
+            ShizukuHelper.unbindInputService()
+        } catch (_: Throwable) {}
 
         listOf(aimZoneView, crosshairView, topBarRoot, quickAimButton, eyeButton, touchRippleView).forEach { view ->
             if (view != null && view.isAttachedToWindow) {

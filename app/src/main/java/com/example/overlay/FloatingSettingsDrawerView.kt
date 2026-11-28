@@ -49,6 +49,7 @@ class FloatingSettingsDrawerView(
         fun onSetAimEnabled(enabled: Boolean)
         fun onToggleEditMode()
         fun onToggleHideHud()
+        fun onToggleKeyboard()
         fun onAimSensitivitySet(sensitivity: Float)
         fun onGyroSettingsChanged()
         fun onCrosshairSettingsChanged()
@@ -568,8 +569,21 @@ class FloatingSettingsDrawerView(
         }
         addDivider(list)
 
-        // 6. HIDE HUD & TURN OFF SERVICE
+        // 6. KEYBOARD, HIDE HUD & TURN OFF SERVICE
         addSpacer(list, 6f)
+        val kbBtn = createFullWidthButton(
+            label = "Virtual Keyboard (⌨)",
+            bgColor = 0xFF333333.toInt(),
+            textColor = 0xFFFFFFFF.toInt()
+        ).apply {
+            setOnClickListener {
+                dismiss()
+                callbacks.onToggleKeyboard()
+            }
+        }
+        list.addView(kbBtn)
+        addSpacer(list, 6f)
+
         val hideBtn = createFullWidthButton(
             label = context.getString(R.string.cog_hide_hud),
             bgColor = 0xFF333333.toInt(),

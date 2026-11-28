@@ -37,10 +37,26 @@ public class ShizukuInputService extends IInputService.Stub {
 
     public ShizukuInputService() {
         initReflection();
+        setHardKeyboardImeSetting(true);
         initUinput();
     }
 
+    private void setHardKeyboardImeSetting(boolean allowSoftImeWithHardKeyboard) {
+        try {
+            String val = allowSoftImeWithHardKeyboard ? "1" : "0";
+            Runtime.getRuntime().exec(new String[]{"settings", "put", "secure", "show_ime_with_hard_keyboard", val});
+            Log.i(TAG, "Successfully set show_ime_with_hard_keyboard = " + val);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to update show_ime_with_hard_keyboard setting", t);
+        }
+    }
+
     private void initUinput() {
+        // Clean up any leftover uinput devices first
+        try {
+            UinputBridge.destroyUinput();
+        } catch (Throwable ignored) {}
+
         int mouseFd = UinputBridge.openMouseDevice();
         if (mouseFd >= 0) {
             uinputMouseFd = mouseFd;
@@ -395,14 +411,16 @@ public class ShizukuInputService extends IInputService.Stub {
             resetAllInputs();
         } catch (Throwable ignored) {
         }
-        if (uinputMouseFd >= 0) {
-            UinputBridge.closeDevice(uinputMouseFd);
-            uinputMouseFd = -1;
+        try {
+            UinputBridge.destroyUinput();
+        } catch (Throwable ignored) {
         }
-        if (uinputKbdFd >= 0) {
-            UinputBridge.closeDevice(uinputKbdFd);
-            uinputKbdFd = -1;
-        }
+        uinputMouseFd = -1;
+        uinputKbdFd = -1;
+
+        // Guarantee soft keyboard IME is re-enabled immediately
+        setHardKeyboardImeSetting(true);
+
         System.exit(0);
     }
 

@@ -155,6 +155,14 @@ public final class UinputBridge {
         return ANDROID_TO_LINUX_KEY.get(androidKeyCode, 0);
     }
 
+    public static void destroyUinput() {
+        if (!sNativeLoaded) return;
+        try {
+            nativeDestroyUinput();
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static int openMouseDevice() {
         if (!sNativeLoaded) return -1;
         try {
@@ -225,6 +233,7 @@ public final class UinputBridge {
         }
     }
 
+    private static native void nativeDestroyUinput();
     private static native int nativeOpenMouseUinput();
     private static native int nativeOpenKeyboardUinput();
     private static native boolean nativeInjectMouseButton(int fd, int linuxButton, boolean down);

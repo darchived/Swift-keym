@@ -9,6 +9,9 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+static int s_mouse_fd = -1;
+static int s_kbd_fd = -1;
+
 static int emit_raw(int fd, uint16_t type, uint16_t code, int32_t value) {
     struct input_event ie;
     memset(&ie, 0, sizeof(ie));
@@ -23,10 +26,32 @@ static int emit_syn(int fd) {
     return emit_raw(fd, EV_SYN, SYN_REPORT, 0);
 }
 
+JNIEXPORT void JNICALL
+Java_com_example_input_UinputBridge_nativeDestroyUinput(JNIEnv *env, jclass clazz) {
+    (void) env;
+    (void) clazz;
+    if (s_mouse_fd >= 0) {
+        ioctl(s_mouse_fd, UI_DEV_DESTROY);
+        close(s_mouse_fd);
+        s_mouse_fd = -1;
+    }
+    if (s_kbd_fd >= 0) {
+        ioctl(s_kbd_fd, UI_DEV_DESTROY);
+        close(s_kbd_fd);
+        s_kbd_fd = -1;
+    }
+}
+
 JNIEXPORT jint JNICALL
 Java_com_example_input_UinputBridge_nativeOpenMouseUinput(JNIEnv *env, jclass clazz) {
     (void) env;
     (void) clazz;
+
+    if (s_mouse_fd >= 0) {
+        ioctl(s_mouse_fd, UI_DEV_DESTROY);
+        close(s_mouse_fd);
+        s_mouse_fd = -1;
+    }
 
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) {
@@ -90,7 +115,7 @@ Java_com_example_input_UinputBridge_nativeOpenMouseUinput(JNIEnv *env, jclass cl
         return -err;
     }
 
-    /* Allow Android InputReader a moment to register the new virtual input device */
+    s_mouse_fd = fd;
     usleep(50000);
     return fd;
 }
@@ -99,6 +124,12 @@ JNIEXPORT jint JNICALL
 Java_com_example_input_UinputBridge_nativeOpenKeyboardUinput(JNIEnv *env, jclass clazz) {
     (void) env;
     (void) clazz;
+
+    if (s_kbd_fd >= 0) {
+        ioctl(s_kbd_fd, UI_DEV_DESTROY);
+        close(s_kbd_fd);
+        s_kbd_fd = -1;
+    }
 
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) {
@@ -155,6 +186,7 @@ Java_com_example_input_UinputBridge_nativeOpenKeyboardUinput(JNIEnv *env, jclass
         return -err;
     }
 
+    s_kbd_fd = fd;
     usleep(50000);
     return fd;
 }
@@ -226,5 +258,7 @@ Java_com_example_input_UinputBridge_nativeCloseUinput(JNIEnv *env, jclass clazz,
     if (fd >= 0) {
         ioctl(fd, UI_DEV_DESTROY);
         close(fd);
+        if (fd == s_mouse_fd) s_mouse_fd = -1;
+        if (fd == s_kbd_fd) s_kbd_fd = -1;
     }
 }
