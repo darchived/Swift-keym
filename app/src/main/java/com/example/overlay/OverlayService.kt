@@ -19,8 +19,10 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.DisplayMetrics
@@ -309,6 +311,9 @@ class OverlayService : Service() {
 
         override fun onTouchFeedback(rawX: Float, rawY: Float) {
             spawnTouchRipple(rawX, rawY)
+            if (isAimEnabled) {
+                aimZoneView?.postKeepAlive()
+            }
         }
 
         override fun onQuickTurnRequested(degrees: Int) {
@@ -318,6 +323,16 @@ class OverlayService : Service() {
         override fun onFreeLookChanged(active: Boolean) {
             isFreeLookActive = active
             liveHudPillRoot?.post { updateLiveHudPill() }
+        }
+
+        override fun onPassThruAimDelta(dx: Float, dy: Float) {
+            aimZoneView?.addPassThruDelta(dx, dy)
+        }
+
+        override fun onVirtualMouseTouchActivity() {
+            if (isAimEnabled) {
+                aimZoneView?.postKeepAlive()
+            }
         }
 
         override fun onShowRadialWheel(data: ControlData, rawX: Float, rawY: Float) {
@@ -1141,6 +1156,7 @@ class OverlayService : Service() {
         isAimEnabled = enabled && !isHudHidden
         quickAimButton?.let { styleChipToggleButton(it, isAimEnabled) }
         updateAimZoneWindowLayout()
+        aimZoneView?.postVirtualMouseActive(isAimEnabled)
         updateLiveHudPill()
     }
 
@@ -1394,6 +1410,11 @@ class OverlayService : Service() {
         radialWheelView = null
 
         try {
+            InputBridge.setVirtualMouseActive(false)
+            aimZoneView?.release()
+        } catch (_: Throwable) {}
+
+        try {
             ShizukuHelper.destroyUinput()
         } catch (_: Throwable) {}
 
@@ -1460,12 +1481,23 @@ class OverlayService : Service() {
         private var quickTurnPerTickDx = 0f
 
         // Smooth ADS transition ramp tracking
+        private val adsRampLock = Any()
         private var lastAdsDown = false
         private var adsRampStartMs = 0L
         private var adsRampFrom = 1.0f
 
         @Volatile private var isFlushLoopRunning = false
-        private val flushHandler = Handler(Looper.getMainLooper())
+        private val flushThread = HandlerThread(
+            "SwiftKeyM-AimFlush",
+            Process.THREAD_PRIORITY_URGENT_DISPLAY
+        ).apply { start() }
+        private val flushHandler = Handler(flushThread.looper)
+
+        private val keepAliveRunnable = Runnable {
+            if (isAimEnabled && !isHudHidden) {
+                InputBridge.sendMouseKeepAlive()
+            }
+        }
 
         private val flushRunnable = object : Runnable {
             override fun run() {
@@ -1522,21 +1554,23 @@ class OverlayService : Service() {
         }
 
         private fun computeCurrentAdsZoomMultiplier(): Float {
-            val isAds = InputBridge.isSecondaryMouseDown
-            val now = SystemClock.uptimeMillis()
-            val adsBase = ControlLayoutManager.getAimAdsMultiplier(context)
-            val zoomFactor = ControlLayoutManager.getZoomFactorForLevel(ControlLayoutManager.getAimZoomLevel(context))
-            val target = if (isAds) adsBase * zoomFactor else 1.0f
+            synchronized(adsRampLock) {
+                val isAds = InputBridge.isSecondaryMouseDown
+                val now = SystemClock.uptimeMillis()
+                val adsBase = ControlLayoutManager.getAimAdsMultiplier(context)
+                val zoomFactor = ControlLayoutManager.getZoomFactorForLevel(ControlLayoutManager.getAimZoomLevel(context))
+                val target = if (isAds) adsBase * zoomFactor else 1.0f
 
-            if (isAds != lastAdsDown) {
-                adsRampFrom = if (lastAdsDown) adsBase * zoomFactor else 1.0f
-                adsRampStartMs = now
-                lastAdsDown = isAds
+                if (isAds != lastAdsDown) {
+                    adsRampFrom = if (lastAdsDown) adsBase * zoomFactor else 1.0f
+                    adsRampStartMs = now
+                    lastAdsDown = isAds
+                }
+                val rampMs = ControlLayoutManager.getAimAdsRampMs(context)
+                if (rampMs <= 0) return target
+                val progress = ((now - adsRampStartMs).toFloat() / rampMs.toFloat()).coerceIn(0f, 1f)
+                return adsRampFrom + (target - adsRampFrom) * progress
             }
-            val rampMs = ControlLayoutManager.getAimAdsRampMs(context)
-            if (rampMs <= 0) return target
-            val progress = ((now - adsRampStartMs).toFloat() / rampMs.toFloat()).coerceIn(0f, 1f)
-            return adsRampFrom + (target - adsRampFrom) * progress
         }
 
         private fun startFlushLoop() {
@@ -1571,6 +1605,26 @@ class OverlayService : Service() {
             gyroController?.isTouchSwiping = false
         }
 
+        fun postVirtualMouseActive(active: Boolean) {
+            flushHandler.post {
+                InputBridge.setVirtualMouseActive(active)
+            }
+        }
+
+        fun postKeepAlive() {
+            flushHandler.removeCallbacks(keepAliveRunnable)
+            flushHandler.post(keepAliveRunnable)
+        }
+
+        fun release() {
+            stopFlushLoopAndClear()
+            flushHandler.removeCallbacksAndMessages(null)
+            try {
+                flushThread.quitSafely()
+            } catch (_: Throwable) {
+            }
+        }
+
         @Volatile private var thumbDownDragAccumulator = 0f
 
         fun addGyroDelta(gyroDx: Float, gyroDy: Float) {
@@ -1578,6 +1632,15 @@ class OverlayService : Service() {
             synchronized(aimLock) {
                 pendingDx += gyroDx
                 pendingDy += gyroDy
+            }
+            startFlushLoop()
+        }
+
+        fun addPassThruDelta(dx: Float, dy: Float) {
+            if (isHudHidden || controlLayout?.isModifiable == true) return
+            synchronized(aimLock) {
+                pendingDx += dx
+                pendingDy += dy
             }
             startFlushLoop()
         }
@@ -1679,6 +1742,8 @@ class OverlayService : Service() {
                             thumbDownDragAccumulator = 0f
                         }
                     }
+                    // Immediately pulse hardware mouse keep-alive on ACTION_DOWN so cursor never hides
+                    postKeepAlive()
                     // NEVER compute delta or inject movement on ACTION_DOWN / ACTION_POINTER_DOWN
                     return true
                 }
@@ -1830,6 +1895,8 @@ class OverlayService : Service() {
             } else {
                 stopFlushLoopAndClear()
             }
+            // Immediately pulse zero-delta keep-alive on ACTION_UP / ACTION_CANCEL so Android keeps cursor visible
+            postKeepAlive()
         }
     }
 }

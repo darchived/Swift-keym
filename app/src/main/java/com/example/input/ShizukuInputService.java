@@ -11,18 +11,25 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class ShizukuInputService extends IInputService.Stub {
     private static final String TAG = "ShizukuInputService";
+    private static final long MOUSE_KEEP_ALIVE_MS = 1500L;
 
     // Separate kernel virtual USB mouse & keyboard (/dev/uinput) file descriptors
     private volatile int uinputMouseFd = -1;
     private volatile int uinputKbdFd = -1;
-    private volatile float uinputRelAccX = 0f;
-    private volatile float uinputRelAccY = 0f;
+    private float uinputRelAccX = 0f;
+    private float uinputRelAccY = 0f;
+    private volatile boolean virtualMouseActive = false;
+    private volatile long lastMouseActivityMs = 0L;
 
+    private final Object mouseLock = new Object();
     private final ConcurrentHashMap<Integer, Long> keyDownTimes = new ConcurrentHashMap<>();
     private final ExecutorService shellExecutor = Executors.newSingleThreadExecutor();
+    private final ScheduledExecutorService keepAliveScheduler = Executors.newSingleThreadScheduledExecutor();
     private volatile int activeMetaState = 0;
     private volatile int mouseButtonState = 0;
 
@@ -33,6 +40,14 @@ public class ShizukuInputService extends IInputService.Stub {
         }
         setHardKeyboardImeSetting(true);
         initUinput();
+        keepAliveScheduler.scheduleAtFixedRate(() -> {
+            if (!virtualMouseActive) return;
+            if (uinputMouseFd < 0) return;
+            long now = SystemClock.uptimeMillis();
+            if (now - lastMouseActivityMs >= 1400L) {
+                sendMouseKeepAlive();
+            }
+        }, MOUSE_KEEP_ALIVE_MS, MOUSE_KEEP_ALIVE_MS, TimeUnit.MILLISECONDS);
     }
 
     private void setHardKeyboardImeSetting(boolean allowSoftImeWithHardKeyboard) {
@@ -130,56 +145,85 @@ public class ShizukuInputService extends IInputService.Stub {
     }
 
     @Override
-    public synchronized void injectMouseButton(int button, boolean down) {
-        int prevState = mouseButtonState;
-        if (down) {
-            if ((prevState & button) != 0) return;
-            mouseButtonState = prevState | button;
-        } else {
-            if ((prevState & button) == 0) return;
-            mouseButtonState = prevState & ~button;
-        }
+    public void injectMouseButton(int button, boolean down) {
+        synchronized (mouseLock) {
+            int prevState = mouseButtonState;
+            if (down) {
+                if ((prevState & button) != 0) return;
+                mouseButtonState = prevState | button;
+            } else {
+                if ((prevState & button) == 0) return;
+                mouseButtonState = prevState & ~button;
+            }
 
-        if (uinputMouseFd >= 0) {
-            UinputBridge.injectMouseButton(uinputMouseFd, button, down);
+            if (uinputMouseFd >= 0) {
+                UinputBridge.injectMouseButton(uinputMouseFd, button, down);
+                lastMouseActivityMs = SystemClock.uptimeMillis();
+            }
         }
     }
 
     @Override
-    public synchronized void injectMouseMove(float dx, float dy) {
+    public void injectMouseMove(float dx, float dy) {
         if (dx == 0f && dy == 0f) return;
         try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
         } catch (Throwable ignored) {
         }
 
-        if (uinputMouseFd >= 0) {
-            uinputRelAccX += dx;
-            uinputRelAccY += dy;
-            int ix = (int) uinputRelAccX;
-            int iy = (int) uinputRelAccY;
-            uinputRelAccX -= ix;
-            uinputRelAccY -= iy;
-            if (ix == 0 && iy == 0) return;
-            UinputBridge.injectMouseMove(uinputMouseFd, ix, iy);
+        synchronized (mouseLock) {
+            if (uinputMouseFd >= 0) {
+                uinputRelAccX += dx;
+                uinputRelAccY += dy;
+                int ix = (int) uinputRelAccX;
+                int iy = (int) uinputRelAccY;
+                uinputRelAccX -= ix;
+                uinputRelAccY -= iy;
+                if (ix == 0 && iy == 0) return;
+                UinputBridge.injectMouseMove(uinputMouseFd, ix, iy);
+                lastMouseActivityMs = SystemClock.uptimeMillis();
+            }
         }
     }
 
     @Override
-    public synchronized void injectMouseScroll(float vScroll, float hScroll) {
-        if (uinputMouseFd >= 0) {
-            int iv = Math.round(vScroll);
-            int ih = Math.round(hScroll);
-            if (iv != 0 || ih != 0) {
-                UinputBridge.injectMouseScroll(uinputMouseFd, iv, ih);
+    public void injectMouseScroll(float vScroll, float hScroll) {
+        synchronized (mouseLock) {
+            if (uinputMouseFd >= 0) {
+                int iv = Math.round(vScroll);
+                int ih = Math.round(hScroll);
+                if (iv != 0 || ih != 0) {
+                    UinputBridge.injectMouseScroll(uinputMouseFd, iv, ih);
+                    lastMouseActivityMs = SystemClock.uptimeMillis();
+                }
+            }
+        }
+    }
+
+    @Override
+    public void setVirtualMouseActive(boolean active) {
+        virtualMouseActive = active;
+        if (active) {
+            sendMouseKeepAlive();
+        }
+    }
+
+    @Override
+    public void sendMouseKeepAlive() {
+        synchronized (mouseLock) {
+            if (uinputMouseFd >= 0) {
+                UinputBridge.injectMouseKeepAlive(uinputMouseFd);
+                lastMouseActivityMs = SystemClock.uptimeMillis();
             }
         }
     }
 
     @Override
     public synchronized void resetAllInputs() {
-        uinputRelAccX = 0f;
-        uinputRelAccY = 0f;
+        synchronized (mouseLock) {
+            uinputRelAccX = 0f;
+            uinputRelAccY = 0f;
+        }
 
         List<Integer> heldKeys = new ArrayList<>(keyDownTimes.keySet());
         for (Integer keyCode : heldKeys) {
@@ -224,16 +268,19 @@ public class ShizukuInputService extends IInputService.Stub {
 
     @Override
     public synchronized void destroyUinput() {
+        virtualMouseActive = false;
         try {
             resetAllInputs();
         } catch (Throwable ignored) {
         }
-        try {
-            UinputBridge.destroyUinput();
-        } catch (Throwable ignored) {
+        synchronized (mouseLock) {
+            try {
+                UinputBridge.destroyUinput();
+            } catch (Throwable ignored) {
+            }
+            uinputMouseFd = -1;
+            uinputKbdFd = -1;
         }
-        uinputMouseFd = -1;
-        uinputKbdFd = -1;
         setHardKeyboardImeSetting(true);
         try {
             runProcess(Arrays.asList("input", "keyevent", "0"));
@@ -305,6 +352,7 @@ public class ShizukuInputService extends IInputService.Stub {
     @Override
     public void destroy() {
         destroyUinput();
+        keepAliveScheduler.shutdownNow();
         shellExecutor.shutdownNow();
         System.exit(0);
     }

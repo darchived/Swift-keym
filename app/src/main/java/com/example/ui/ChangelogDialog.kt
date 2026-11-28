@@ -59,6 +59,15 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
+        version = "v1.0.2-fixed",
+        tag = "Hotfix Release",
+        items = listOf(
+            "Persistent Full-Time Virtual Mouse Cursor: fd_mouse stays permanently open while Virtual Mouse is ON, paired with a 1500ms background zero-delta keep-alive pulse and immediate pulses on ACTION_DOWN / ACTION_UP so the cursor never disappears when lifting your finger.",
+            "Zero Swipe Lag Spikes (Batched uinput + Dedicated 120Hz Thread): Single-syscall struct input_event batch writes in uinput_helper.c plus a dedicated urgent-display HandlerThread 8ms (120Hz) coalescing flush loop for both Aim Swipe Zone and pass-through buttons.",
+            "True Physical-Mouse Behavior: Pure relative REL_X / REL_Y deltas work identically across desktop/lobby cursor navigation (tap MB1 to click) and captured 3D camera rotation in-game."
+        )
+    ),
+    ChangelogRelease(
         version = "v1.0.1-fixed",
         tag = "Hotfix Release",
         items = listOf(

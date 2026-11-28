@@ -62,6 +62,10 @@ public object InputBridge {
     var isSecondaryMouseDown: Boolean = false
         private set
 
+    @Volatile
+    var isVirtualMouseActive: Boolean = false
+        private set
+
     private val heldGlfwKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
     private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
@@ -78,8 +82,15 @@ public object InputBridge {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             if (service != null && service.pingBinder()) {
-                inputService = IInputService.Stub.asInterface(service)
+                val svc = IInputService.Stub.asInterface(service)
+                inputService = svc
                 _isServiceConnected.value = true
+                if (isVirtualMouseActive) {
+                    try {
+                        svc.setVirtualMouseActive(true)
+                    } catch (_: RemoteException) {
+                    }
+                }
                 Log.i(TAG, "Connected to ShizukuInputService")
             }
         }
@@ -291,6 +302,27 @@ public object InputBridge {
             svc.injectMouseScroll(vScroll, hScroll)
         } catch (e: RemoteException) {
             Log.e(TAG, "injectMouseScroll failed", e)
+        }
+    }
+
+    @JvmStatic
+    fun setVirtualMouseActive(active: Boolean) {
+        isVirtualMouseActive = active
+        val svc = inputService ?: return
+        try {
+            svc.setVirtualMouseActive(active)
+        } catch (e: RemoteException) {
+            Log.w(TAG, "setVirtualMouseActive failed", e)
+        }
+    }
+
+    @JvmStatic
+    fun sendMouseKeepAlive() {
+        val svc = inputService ?: return
+        try {
+            svc.sendMouseKeepAlive()
+        } catch (e: RemoteException) {
+            Log.w(TAG, "sendMouseKeepAlive failed", e)
         }
     }
 

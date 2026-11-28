@@ -62,6 +62,8 @@ public class ControlLayout extends FrameLayout {
         default void onTouchFeedback(float rawX, float rawY) {}
         default void onQuickTurnRequested(int degrees) {}
         default void onFreeLookChanged(boolean active) {}
+        default void onPassThruAimDelta(float dx, float dy) {}
+        default void onVirtualMouseTouchActivity() {}
         default void onShowRadialWheel(ControlData data, float rawX, float rawY) {}
         default void onUpdateRadialWheel(float rawX, float rawY) {}
         default void onReleaseRadialWheel() {}
@@ -515,6 +517,20 @@ public class ControlLayout extends FrameLayout {
     public void notifyFreeLookChanged(boolean active) {
         if (mWindowHost != null) {
             mWindowHost.onFreeLookChanged(active);
+        }
+    }
+
+    public void notifyPassThruAimDelta(float dx, float dy) {
+        if (mWindowHost != null) {
+            mWindowHost.onPassThruAimDelta(dx, dy);
+        } else {
+            InputBridge.sendMouseMove(dx, dy);
+        }
+    }
+
+    public void notifyVirtualMouseTouchActivity() {
+        if (mWindowHost != null) {
+            mWindowHost.onVirtualMouseTouchActivity();
         }
     }
 

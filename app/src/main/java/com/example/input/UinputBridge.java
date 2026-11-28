@@ -204,6 +204,15 @@ public final class UinputBridge {
         }
     }
 
+    public static boolean injectMouseKeepAlive(int fd) {
+        if (!sNativeLoaded || fd < 0) return false;
+        try {
+            return nativeInjectMouseKeepAlive(fd);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     public static boolean injectMouseScroll(int fd, int vScroll, int hScroll) {
         if (!sNativeLoaded || fd < 0) return false;
         if (vScroll == 0 && hScroll == 0) return true;
@@ -238,6 +247,7 @@ public final class UinputBridge {
     private static native int nativeOpenKeyboardUinput();
     private static native boolean nativeInjectMouseButton(int fd, int linuxButton, boolean down);
     private static native boolean nativeInjectMouseMove(int fd, int dx, int dy);
+    private static native boolean nativeInjectMouseKeepAlive(int fd);
     private static native boolean nativeInjectMouseScroll(int fd, int vScroll, int hScroll);
     private static native boolean nativeInjectKey(int fd, int linuxKeyCode, boolean down);
     private static native void nativeCloseUinput(int fd);

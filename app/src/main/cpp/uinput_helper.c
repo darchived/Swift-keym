@@ -12,20 +12,6 @@
 static int s_mouse_fd = -1;
 static int s_kbd_fd = -1;
 
-static int emit_raw(int fd, uint16_t type, uint16_t code, int32_t value) {
-    struct input_event ie;
-    memset(&ie, 0, sizeof(ie));
-    ie.type = type;
-    ie.code = code;
-    ie.value = value;
-    ssize_t written = write(fd, &ie, sizeof(ie));
-    return (written == (ssize_t) sizeof(ie)) ? 0 : -1;
-}
-
-static int emit_syn(int fd) {
-    return emit_raw(fd, EV_SYN, SYN_REPORT, 0);
-}
-
 JNIEXPORT void JNICALL
 Java_com_example_input_UinputBridge_nativeDestroyUinput(JNIEnv *env, jclass clazz) {
     (void) env;
@@ -199,10 +185,17 @@ Java_com_example_input_UinputBridge_nativeInjectMouseButton(
     (void) clazz;
     if (fd < 0) return JNI_FALSE;
 
-    if (emit_raw(fd, EV_KEY, (uint16_t) linuxButton, down ? 1 : 0) < 0) {
-        return JNI_FALSE;
-    }
-    return emit_syn(fd) == 0 ? JNI_TRUE : JNI_FALSE;
+    struct input_event events[2];
+    memset(events, 0, sizeof(events));
+    events[0].type = EV_KEY;
+    events[0].code = (uint16_t) linuxButton;
+    events[0].value = down ? 1 : 0;
+    events[1].type = EV_SYN;
+    events[1].code = SYN_REPORT;
+    events[1].value = 0;
+
+    ssize_t written = write(fd, events, sizeof(events));
+    return (written == (ssize_t) sizeof(events)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -211,15 +204,41 @@ Java_com_example_input_UinputBridge_nativeInjectMouseMove(
     (void) env;
     (void) clazz;
     if (fd < 0) return JNI_FALSE;
-    if (dx == 0 && dy == 0) return JNI_TRUE;
 
-    if (dx != 0 && emit_raw(fd, EV_REL, REL_X, (int32_t) dx) < 0) {
-        return JNI_FALSE;
-    }
-    if (dy != 0 && emit_raw(fd, EV_REL, REL_Y, (int32_t) dy) < 0) {
-        return JNI_FALSE;
-    }
-    return emit_syn(fd) == 0 ? JNI_TRUE : JNI_FALSE;
+    struct input_event events[3];
+    memset(events, 0, sizeof(events));
+    events[0].type = EV_REL;
+    events[0].code = REL_X;
+    events[0].value = (int32_t) dx;
+    events[1].type = EV_REL;
+    events[1].code = REL_Y;
+    events[1].value = (int32_t) dy;
+    events[2].type = EV_SYN;
+    events[2].code = SYN_REPORT;
+    events[2].value = 0;
+
+    ssize_t written = write(fd, events, sizeof(events));
+    return (written == (ssize_t) sizeof(events)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_example_input_UinputBridge_nativeInjectMouseKeepAlive(
+        JNIEnv *env, jclass clazz, jint fd) {
+    (void) env;
+    (void) clazz;
+    if (fd < 0) return JNI_FALSE;
+
+    struct input_event events[2];
+    memset(events, 0, sizeof(events));
+    events[0].type = EV_REL;
+    events[0].code = REL_X;
+    events[0].value = 0;
+    events[1].type = EV_SYN;
+    events[1].code = SYN_REPORT;
+    events[1].value = 0;
+
+    ssize_t written = write(fd, events, sizeof(events));
+    return (written == (ssize_t) sizeof(events)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -230,13 +249,29 @@ Java_com_example_input_UinputBridge_nativeInjectMouseScroll(
     if (fd < 0) return JNI_FALSE;
     if (vScroll == 0 && hScroll == 0) return JNI_TRUE;
 
-    if (vScroll != 0 && emit_raw(fd, EV_REL, REL_WHEEL, (int32_t) vScroll) < 0) {
-        return JNI_FALSE;
+    struct input_event events[3];
+    memset(events, 0, sizeof(events));
+    int count = 0;
+    if (vScroll != 0) {
+        events[count].type = EV_REL;
+        events[count].code = REL_WHEEL;
+        events[count].value = (int32_t) vScroll;
+        count++;
     }
-    if (hScroll != 0 && emit_raw(fd, EV_REL, REL_HWHEEL, (int32_t) hScroll) < 0) {
-        return JNI_FALSE;
+    if (hScroll != 0) {
+        events[count].type = EV_REL;
+        events[count].code = REL_HWHEEL;
+        events[count].value = (int32_t) hScroll;
+        count++;
     }
-    return emit_syn(fd) == 0 ? JNI_TRUE : JNI_FALSE;
+    events[count].type = EV_SYN;
+    events[count].code = SYN_REPORT;
+    events[count].value = 0;
+    count++;
+
+    ssize_t bytes = (ssize_t) (count * sizeof(struct input_event));
+    ssize_t written = write(fd, events, (size_t) bytes);
+    return (written == bytes) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -246,10 +281,17 @@ Java_com_example_input_UinputBridge_nativeInjectKey(
     (void) clazz;
     if (fd < 0 || linuxKeyCode <= 0) return JNI_FALSE;
 
-    if (emit_raw(fd, EV_KEY, (uint16_t) linuxKeyCode, down ? 1 : 0) < 0) {
-        return JNI_FALSE;
-    }
-    return emit_syn(fd) == 0 ? JNI_TRUE : JNI_FALSE;
+    struct input_event events[2];
+    memset(events, 0, sizeof(events));
+    events[0].type = EV_KEY;
+    events[0].code = (uint16_t) linuxKeyCode;
+    events[0].value = down ? 1 : 0;
+    events[1].type = EV_SYN;
+    events[1].code = SYN_REPORT;
+    events[1].value = 0;
+
+    ssize_t written = write(fd, events, sizeof(events));
+    return (written == (ssize_t) sizeof(events)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

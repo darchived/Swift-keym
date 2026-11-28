@@ -25,7 +25,7 @@ class ExampleRobolectricTest {
     fun `read app name and credits from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         assertEquals("Swift KeyM", context.getString(R.string.app_name))
-        assertEquals("Swift KeyM v1.0.1-fixed • Created by St3rlight • Team StarDevs", context.getString(R.string.app_credits))
+        assertEquals("Swift KeyM v1.0.2-fixed • Created by St3rlight • Team StarDevs", context.getString(R.string.app_credits))
     }
 
     @Test
@@ -519,5 +519,44 @@ class ExampleRobolectricTest {
 
         assertEquals(0, farSteerCount)
         assertFalse(com.example.vision.AiVisionTerminalBus.activeTarget.value?.isLocked == true)
+    }
+
+    @Test
+    fun `virtual mouse state and pass through aim delta coalescing hook work cleanly`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        com.example.input.InputBridge.setVirtualMouseActive(true)
+        assertTrue(com.example.input.InputBridge.isVirtualMouseActive)
+        com.example.input.InputBridge.sendMouseKeepAlive()
+
+        var coalescedDx = 0f
+        var coalescedDy = 0f
+        var touchActivityPulses = 0
+        val host = object : ControlLayout.WindowOverlayHost {
+            override fun getOverlayScreenWidth(): Int = 1920
+            override fun getOverlayScreenHeight(): Int = 1080
+            override fun attachControlWindow(view: android.view.View, x: Int, y: Int, width: Int, height: Int, visible: Boolean) {}
+            override fun updateControlWindow(view: android.view.View, x: Int, y: Int, width: Int, height: Int, visible: Boolean) {}
+            override fun detachControlWindow(view: android.view.View) {}
+            override fun getControlWindowX(view: android.view.View): Int = 0
+            override fun getControlWindowY(view: android.view.View): Int = 0
+            override fun onPassThruAimDelta(dx: Float, dy: Float) {
+                coalescedDx += dx
+                coalescedDy += dy
+            }
+            override fun onVirtualMouseTouchActivity() {
+                touchActivityPulses++
+            }
+        }
+        val layout = ControlLayout(context)
+        layout.setWindowOverlayHost(host)
+        layout.notifyPassThruAimDelta(4.5f, -2.25f)
+        layout.notifyVirtualMouseTouchActivity()
+
+        assertEquals(4.5f, coalescedDx, 0.01f)
+        assertEquals(-2.25f, coalescedDy, 0.01f)
+        assertEquals(1, touchActivityPulses)
+
+        com.example.input.InputBridge.setVirtualMouseActive(false)
+        assertFalse(com.example.input.InputBridge.isVirtualMouseActive)
     }
 }

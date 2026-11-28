@@ -532,7 +532,7 @@ public class ControlButton extends Button implements ControlInterface {
                         if (dx != 0f || dy != 0f) {
                             float sensX = ControlLayoutManager.INSTANCE.getAimSensX(getContext());
                             float sensY = ControlLayoutManager.INSTANCE.getAimSensY(getContext());
-                            InputBridge.sendMouseMove(dx * sensX, dy * sensY);
+                            mParentLayout.notifyPassThruAimDelta(dx * sensX, dy * sensY);
                         }
                     }
                 }
@@ -585,6 +585,7 @@ public class ControlButton extends Button implements ControlInterface {
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         passThruPointerId = MotionEvent.INVALID_POINTER_ID;
         passThruDragging = false;
+        mParentLayout.notifyVirtualMouseTouchActivity();
 
         if (mProperties.isRadialWheel) {
             mIsPressed = false;

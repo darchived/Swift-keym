@@ -9,5 +9,7 @@ interface IInputService {
     String execShell(String command) = 6;
     boolean allowOverlayAppOps(String packageName) = 7;
     void destroyUinput() = 8;
+    void setVirtualMouseActive(boolean active) = 9;
+    void sendMouseKeepAlive() = 10;
     void destroy() = 16777114;
 }
