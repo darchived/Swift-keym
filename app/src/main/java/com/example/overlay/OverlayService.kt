@@ -1164,8 +1164,12 @@ class OverlayService : Service() {
      */
     private inner class AimSwipeZoneView(context: Context) : View(context) {
         private var activePointerId = MotionEvent.INVALID_POINTER_ID
+        private var downX = 0f
+        private var downY = 0f
         private var lastX = 0f
         private var lastY = 0f
+        private var isDragging = false
+
         private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0x22FFFFFF
             strokeWidth = ControlUtils.dpToPx(context, 1f)
@@ -1208,23 +1212,13 @@ class OverlayService : Service() {
             }
         }
 
-        private fun stopFlushLoop() {
+        private fun stopFlushLoopAndClear() {
             isFlushLoopRunning = false
             flushHandler.removeCallbacks(flushRunnable)
-            var sendX = 0
-            var sendY = 0
             synchronized(aimLock) {
-                val intX = pendingDx.toInt()
-                val intY = pendingDy.toInt()
-                if (intX != 0 || intY != 0) {
-                    sendX = intX
-                    sendY = intY
-                    pendingDx -= intX.toFloat()
-                    pendingDy -= intY.toFloat()
-                }
-            }
-            if (sendX != 0 || sendY != 0) {
-                InputBridge.sendMouseMove(sendX.toFloat(), sendY.toFloat())
+                pendingDx = 0f
+                pendingDy = 0f
+                thumbDownDragAccumulator = 0f
             }
         }
 
@@ -1251,12 +1245,8 @@ class OverlayService : Service() {
 
         fun resetPointer() {
             activePointerId = MotionEvent.INVALID_POINTER_ID
-            stopFlushLoop()
-            synchronized(aimLock) {
-                pendingDx = 0f
-                pendingDy = 0f
-                thumbDownDragAccumulator = 0f
-            }
+            isDragging = false
+            stopFlushLoopAndClear()
         }
 
         override fun onDraw(canvas: Canvas) {
@@ -1279,87 +1269,121 @@ class OverlayService : Service() {
                     if (activePointerId == MotionEvent.INVALID_POINTER_ID ||
                         event.findPointerIndex(activePointerId) < 0
                     ) {
+                        val px = event.getX(idx)
+                        val py = event.getY(idx)
                         activePointerId = event.getPointerId(idx)
-                        lastX = event.getX(idx)
-                        lastY = event.getY(idx)
-                        startFlushLoop()
+                        downX = px
+                        downY = py
+                        lastX = px
+                        lastY = py
+                        isDragging = false
+                        synchronized(aimLock) {
+                            pendingDx = 0f
+                            pendingDy = 0f
+                            thumbDownDragAccumulator = 0f
+                        }
                     }
+                    // NEVER compute delta or inject movement on ACTION_DOWN / ACTION_POINTER_DOWN
                     return true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    var idx = if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    val idx = if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
                         event.findPointerIndex(activePointerId)
                     } else {
                         -1
                     }
-                    if (idx < 0 && event.pointerCount > 0) {
-                        activePointerId = event.getPointerId(0)
-                        lastX = event.getX(0)
-                        lastY = event.getY(0)
+                    if (idx < 0) {
+                        if (event.pointerCount > 0) {
+                            val px = event.getX(0)
+                            val py = event.getY(0)
+                            activePointerId = event.getPointerId(0)
+                            downX = px
+                            downY = py
+                            lastX = px
+                            lastY = py
+                            isDragging = false
+                            synchronized(aimLock) {
+                                pendingDx = 0f
+                                pendingDy = 0f
+                                thumbDownDragAccumulator = 0f
+                            }
+                        }
+                        return true
+                    }
+
+                    val currX = event.getX(idx)
+                    val currY = event.getY(idx)
+
+                    // 3px touch slop filter so stationary taps move the camera by 0
+                    if (!isDragging) {
+                        val distFromDown = hypot((currX - downX).toDouble(), (currY - downY).toDouble())
+                        if (distFromDown < 3.0) {
+                            return true
+                        }
+                        isDragging = true
+                        lastX = currX
+                        lastY = currY
                         startFlushLoop()
                         return true
                     }
-                    if (idx >= 0) {
-                        val currX = event.getX(idx)
-                        val currY = event.getY(idx)
-                        val dx = currX - lastX
-                        val dy = currY - lastY
-                        lastX = currX
-                        lastY = currY
-                        val maxStep = screenWidthPx * 0.45f
-                        if ((dx != 0f || dy != 0f) && hypot(dx.toDouble(), dy.toDouble()) < maxStep) {
-                            var moveX = dx * sensitivity
-                            var moveY = dy * sensitivity
 
-                            // Smart Thumb Override: track downward drag so auto-recoil doesn't double-dip
-                            if (dy > 0f) {
-                                synchronized(aimLock) {
-                                    thumbDownDragAccumulator += (dy * sensitivity)
-                                }
-                            }
+                    val dx = currX - lastX
+                    val dy = currY - lastY
+                    lastX = currX
+                    lastY = currY
+                    val maxStep = screenWidthPx * 0.45f
+                    if ((dx != 0f || dy != 0f) && hypot(dx.toDouble(), dy.toDouble()) < maxStep) {
+                        var moveX = dx * sensitivity
+                        var moveY = dy * sensitivity
 
-                            // 1. ADS / Scope Sensitivity Multiplier (when holding MB2 / secondary mouse button)
-                            if (InputBridge.isSecondaryMouseDown) {
-                                val adsMult = ControlLayoutManager.getAimAdsMultiplier(context)
-                                moveX *= adsMult
-                                moveY *= adsMult
-                            }
-
-                            // 2. Head-Level Horizontal Stabilizer (vertical dampening)
-                            val vertDampening = ControlLayoutManager.getAimVertDampening(context)
-                            if (vertDampening > 0f && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
-                                moveY *= (1.0f - vertDampening)
-                            }
-
-                            // 3. CODM-Style 3-Zone Velocity Curve (Sticky Micro-Tracking + Standard + Flick Boost)
-                            val rawSpeed = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-                            val stickySlowdown = ControlLayoutManager.getAimStickySlowdown(context)
-                            val velocityFactor = if (rawSpeed <= 2.5f) {
-                                stickySlowdown
-                            } else if (rawSpeed < 6.0f) {
-                                val t = (rawSpeed - 2.5f) / 3.5f
-                                stickySlowdown + t * (1.0f - stickySlowdown)
-                            } else if (rawSpeed <= 12.0f) {
-                                1.0f
-                            } else {
-                                val speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
-                                if (speedAccelEnabled) {
-                                    val accelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
-                                    1.0f + ((rawSpeed - 12f) / 24f).coerceIn(0f, 1.0f) * (accelMultiplier - 1.0f)
-                                } else {
-                                    1.0f
-                                }
-                            }
-                            moveX *= velocityFactor
-                            moveY *= velocityFactor
-
+                        // Smart Thumb Override: track downward drag so auto-recoil doesn't double-dip
+                        if (dy > 0f) {
                             synchronized(aimLock) {
-                                pendingDx += moveX
-                                pendingDy += moveY
+                                thumbDownDragAccumulator += (dy * sensitivity)
                             }
-                            startFlushLoop()
                         }
+
+                        // 1. ADS / Scope Sensitivity Multiplier (when holding MB2 / secondary mouse button)
+                        if (InputBridge.isSecondaryMouseDown) {
+                            val adsMult = ControlLayoutManager.getAimAdsMultiplier(context)
+                            moveX *= adsMult
+                            moveY *= adsMult
+                        }
+
+                        // 2. Head-Level Horizontal Stabilizer (vertical dampening)
+                        val vertDampening = ControlLayoutManager.getAimVertDampening(context)
+                        if (vertDampening > 0f && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f) {
+                            moveY *= (1.0f - vertDampening)
+                        }
+
+                        // 3. CODM-Style 3-Zone Velocity Curve (Sticky Micro-Tracking + Standard + Flick Boost)
+                        val rawSpeed = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                        val stickySlowdown = ControlLayoutManager.getAimStickySlowdown(context)
+                        val velocityFactor = if (rawSpeed <= 2.5f) {
+                            stickySlowdown
+                        } else if (rawSpeed < 6.0f) {
+                            val t = (rawSpeed - 2.5f) / 3.5f
+                            stickySlowdown + t * (1.0f - stickySlowdown)
+                        } else if (rawSpeed <= 12.0f) {
+                            1.0f
+                        } else {
+                            val speedAccelEnabled = ControlLayoutManager.isAimSpeedAccelEnabled(context)
+                            if (speedAccelEnabled) {
+                                val accelMultiplier = ControlLayoutManager.getAimSpeedAccelMultiplier(context)
+                                1.0f + ((rawSpeed - 12f) / 24f).coerceIn(0f, 1.0f) * (accelMultiplier - 1.0f)
+                            } else {
+                                1.0f
+                            }
+                        }
+                        moveX *= velocityFactor
+                        moveY *= velocityFactor
+
+                        synchronized(aimLock) {
+                            pendingDx += moveX
+                            pendingDy += moveY
+                        }
+                        startFlushLoop()
                     }
                     return true
                 }
@@ -1368,28 +1392,17 @@ class OverlayService : Service() {
                     val idx = event.actionIndex
                     val liftedId = event.getPointerId(idx)
                     if (liftedId == activePointerId) {
-                        var replacementIdx = -1
-                        for (i in 0 until event.pointerCount) {
-                            if (i != idx) {
-                                replacementIdx = i
-                                break
-                            }
-                        }
-                        if (replacementIdx >= 0) {
-                            activePointerId = event.getPointerId(replacementIdx)
-                            lastX = event.getX(replacementIdx)
-                            lastY = event.getY(replacementIdx)
-                        } else {
-                            activePointerId = MotionEvent.INVALID_POINTER_ID
-                            stopFlushLoop()
-                        }
+                        activePointerId = MotionEvent.INVALID_POINTER_ID
+                        isDragging = false
+                        stopFlushLoopAndClear()
                     }
                     return true
                 }
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
-                    stopFlushLoop()
+                    isDragging = false
+                    stopFlushLoopAndClear()
                     return true
                 }
             }

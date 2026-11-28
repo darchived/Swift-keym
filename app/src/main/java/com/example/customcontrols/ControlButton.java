@@ -302,8 +302,11 @@ public class ControlButton extends Button implements ControlInterface {
 
     private int activePointerId = MotionEvent.INVALID_POINTER_ID;
     private int passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+    private float passThruDownX = 0f;
+    private float passThruDownY = 0f;
     private float passThruLastX = 0f;
     private float passThruLastY = 0f;
+    private boolean passThruDragging = false;
 
     protected boolean handlePlayTouch(MotionEvent event) {
         switch (event.getActionMasked()) {
@@ -328,9 +331,14 @@ public class ControlButton extends Button implements ControlInterface {
                         sendKeyPresses(true);
                     }
                     if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
+                        float px = event.getX(idx);
+                        float py = event.getY(idx);
                         passThruPointerId = pid;
-                        passThruLastX = event.getX(idx);
-                        passThruLastY = event.getY(idx);
+                        passThruDownX = px;
+                        passThruDownY = py;
+                        passThruLastX = px;
+                        passThruLastY = py;
+                        passThruDragging = false;
                     }
                 }
                 return true;
@@ -343,6 +351,15 @@ public class ControlButton extends Button implements ControlInterface {
                     if (idx >= 0) {
                         float currX = event.getX(idx);
                         float currY = event.getY(idx);
+                        if (!passThruDragging) {
+                            if (Math.hypot(currX - passThruDownX, currY - passThruDownY) < 3.0) {
+                                return true;
+                            }
+                            passThruDragging = true;
+                            passThruLastX = currX;
+                            passThruLastY = currY;
+                            return true;
+                        }
                         float dx = currX - passThruLastX;
                         float dy = currY - passThruLastY;
                         passThruLastX = currX;
@@ -361,6 +378,7 @@ public class ControlButton extends Button implements ControlInterface {
                 int liftedId = event.getPointerId(idx);
                 if (liftedId == passThruPointerId) {
                     passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+                    passThruDragging = false;
                 }
                 if (liftedId == activePointerId) {
                     int replacementIdx = -1;
@@ -373,9 +391,14 @@ public class ControlButton extends Button implements ControlInterface {
                     if (replacementIdx >= 0) {
                         activePointerId = event.getPointerId(replacementIdx);
                         if (mProperties.passThruEnabled && mParentLayout.isDetachedWindowMode()) {
+                            float px = event.getX(replacementIdx);
+                            float py = event.getY(replacementIdx);
                             passThruPointerId = activePointerId;
-                            passThruLastX = event.getX(replacementIdx);
-                            passThruLastY = event.getY(replacementIdx);
+                            passThruDownX = px;
+                            passThruDownY = py;
+                            passThruLastX = px;
+                            passThruLastY = py;
+                            passThruDragging = false;
                         }
                     } else {
                         activePointerId = MotionEvent.INVALID_POINTER_ID;
@@ -393,6 +416,7 @@ public class ControlButton extends Button implements ControlInterface {
             case MotionEvent.ACTION_CANCEL:
                 activePointerId = MotionEvent.INVALID_POINTER_ID;
                 passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+                passThruDragging = false;
                 if (!mProperties.isToggle && mIsPressed) {
                     mIsPressed = false;
                     applyBackgroundDrawable();
@@ -406,6 +430,7 @@ public class ControlButton extends Button implements ControlInterface {
     public void releaseIfPressed() {
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         passThruPointerId = MotionEvent.INVALID_POINTER_ID;
+        passThruDragging = false;
         if (mIsPressed || mIsToggled) {
             mIsPressed = false;
             mIsToggled = false;

@@ -48,6 +48,8 @@ object ControlLayoutManager {
     private const val KEY_LOCK_POSITIONS = "lock_positions"
     private const val KEY_AUTO_LOAD_LAST = "auto_load_last_preset"
     private const val KEY_LAST_CHANGELOG_VERSION = "last_seen_changelog_version"
+    private const val KEY_KEYBOARD_POS_X = "floating_keyboard_pos_x"
+    private const val KEY_KEYBOARD_POS_Y = "floating_keyboard_pos_y"
     private const val DIR_CONTROLMAP = "controlmap"
     private const val DIR_ICONS = "control_icons"
 
@@ -568,6 +570,24 @@ object ControlLayoutManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_LAST_CHANGELOG_VERSION, versionCode)
+            .apply()
+    }
+
+    fun getKeyboardPosX(context: Context, defaultX: Int): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_KEYBOARD_POS_X)) prefs.getInt(KEY_KEYBOARD_POS_X, defaultX) else defaultX
+    }
+
+    fun getKeyboardPosY(context: Context, defaultY: Int): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_KEYBOARD_POS_Y)) prefs.getInt(KEY_KEYBOARD_POS_Y, defaultY) else defaultY
+    }
+
+    fun setKeyboardPos(context: Context, x: Int, y: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_KEYBOARD_POS_X, x)
+            .putInt(KEY_KEYBOARD_POS_Y, y)
             .apply()
     }
 

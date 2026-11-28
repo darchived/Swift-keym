@@ -61,6 +61,7 @@ Java_com_example_input_UinputBridge_nativeOpenMouseUinput(JNIEnv *env, jclass cl
         return -errno;
     }
 
+    /* Strictly relative mouse mode ONLY: EV_SYN + EV_KEY + EV_REL (zero EV_ABS bits) */
     if (ioctl(fd, UI_SET_EVBIT, EV_SYN) < 0 ||
         ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0 ||
         ioctl(fd, UI_SET_EVBIT, EV_REL) < 0) {

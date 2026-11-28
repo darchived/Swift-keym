@@ -43,8 +43,17 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.7.0",
+        version = "v1.8.0",
         tag = "Latest",
+        items = listOf(
+            "Fixed Aim Zone Camera Jump Bug: Zero movement on ACTION_DOWN/ACTION_POINTER_DOWN, 3px touch slop filter (stationary taps move camera by 0), full accumulator & pointer reset on lift, and pure EV_REL mouse verification.",
+            "Draggable Floating QWERTY Keyboard: Added Top Drag Header Bar (⠿ Drag Keyboard / ✕ Close) so you can move the virtual keyboard anywhere on screen with saved position persistence.",
+            "Pass-Through Button Stability: Added 3px touch slop filtering on pass-through buttons (e.g. Shoot) so quick taps never nudge the camera."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.7.0",
+        tag = "Stable",
         items = listOf(
             "Ultra-Fine Sub-Pixel Anti-Recoil (0.00–3.00 in 0.05 steps): Micro-decimal downward pull routed through the 120Hz sub-pixel float accumulator—eliminates harsh over-pulling at low settings.",
             "1-Tap Recoil Presets: Instant switching between Off (0.00), Low / SMG (0.15), Med / AR (0.35), and High / LMG (0.65).",
