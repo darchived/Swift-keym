@@ -159,6 +159,8 @@ class OverlayService : Service() {
     private var touchRippleParams: WindowManager.LayoutParams? = null
     private var crosshairView: CrosshairOverlayView? = null
     private var crosshairParams: WindowManager.LayoutParams? = null
+    private var fovCircleView: FovCircleOverlayView? = null
+    private var fovCircleParams: WindowManager.LayoutParams? = null
 
     private var isHudHidden = false
     private var isFreeLookActive = false
@@ -414,6 +416,7 @@ class OverlayService : Service() {
                 val unified = ControlLayoutManager.getAimSensX(this)
                 controlLayout?.aimSensitivity = unified
                 controlLayout?.isSnapToGridEnabled = ControlLayoutManager.isSnapToGridEnabled(this)
+                syncFovCircleFromPrefs()
                 updateLiveHudPill()
                 startOrStopGameWatcher()
                 return START_STICKY
@@ -442,9 +445,10 @@ class OverlayService : Service() {
             setupVirtualMousePadWindow()
             // Layer 2 (Middle): Individual Control Windows via ControlLayout WindowOverlayHost
             setupDetachedControlLayout()
-            // Layer 3 (Visual-Only Non-Touchable): Center Crosshair & Touch Ripple windows
+            // Layer 3 (Visual-Only Non-Touchable): Center Crosshair, Touch Ripple & FOV Circle windows
             setupCrosshairWindow()
             setupTouchRippleWindow()
+            setupFovCircleWindow()
             // Layer 4 (Top Chrome): Top Pill Bar, Quick-Aim Chip, Persistent Eye Button & Live HUD Pill
             setupTopFloatingBar()
             setupQuickAimButton()
@@ -689,6 +693,42 @@ class OverlayService : Service() {
         crosshairParams = params
         windowManager.addView(view, params)
         syncCrosshairFromPrefs()
+    }
+
+    private fun setupFovCircleWindow() {
+        val view = FovCircleOverlayView(this)
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        fovCircleView = view
+        fovCircleParams = params
+        windowManager.addView(view, params)
+        syncFovCircleFromPrefs()
+    }
+
+    private fun syncFovCircleFromPrefs() {
+        val view = fovCircleView ?: return
+        val params = fovCircleParams ?: return
+        val aiStrength = ControlLayoutManager.getAiAimStrength(this)
+        val enabled = aiStrength >= 0.5f && !isHudHidden
+        view.visibility = if (enabled) View.VISIBLE else View.GONE
+        params.flags = BASE_WINDOW_FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        if (view.isAttachedToWindow) {
+            try {
+                windowManager.updateViewLayout(view, params)
+                view.invalidate()
+            } catch (_: Throwable) {}
+        }
     }
 
     private fun syncCrosshairFromPrefs() {
@@ -1432,6 +1472,7 @@ class OverlayService : Service() {
             setChromeWindowVisible(quickAimButton, quickAimParams, false)
             setChromeWindowVisible(liveHudPillRoot, liveHudPillParams, false)
             setChromeWindowVisible(virtualMousePadView, virtualMousePadParams, false)
+            setChromeWindowVisible(fovCircleView, fovCircleParams, false)
             eyeButton?.setImageResource(R.drawable.ic_eye_off)
         } else {
             // Restore individual control windows according to their logical visibility
@@ -1443,6 +1484,7 @@ class OverlayService : Service() {
             setChromeWindowVisible(topBarRoot, topBarParams, true)
             setChromeWindowVisible(quickAimButton, quickAimParams, true)
             syncVirtualMousePadFromPrefs()
+            syncFovCircleFromPrefs()
             updateLiveHudPill()
             eyeButton?.setImageResource(R.drawable.ic_eye_open)
             gyroController?.paused = hud.isModifiable

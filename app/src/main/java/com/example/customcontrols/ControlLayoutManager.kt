@@ -109,29 +109,36 @@ object ControlLayoutManager {
 
     fun ensureDefaultLayouts(context: Context) {
         val dir = getControlMapDir(context)
-        val fpsFile = File(dir, DEFAULT_FPS_FILE)
-        if (!fpsFile.exists()) {
-            createDefaultFpsPreset().save(fpsFile)
-        }
-        val mcFile = File(dir, DEFAULT_MINECRAFT_FILE)
-        if (!mcFile.exists()) {
-            createMinecraftJavaPreset().save(mcFile)
-        }
-        val actionFile = File(dir, DEFAULT_ACTION_FILE)
-        if (!actionFile.exists()) {
-            createDefaultActionPreset().save(actionFile)
-        }
-        val arenaFile = File(dir, DEFAULT_ARENA_FILE)
-        if (!arenaFile.exists()) {
-            createArenaShooterPreset().save(arenaFile)
-        }
-        val mobaFile = File(dir, DEFAULT_MOBA_FILE)
-        if (!mobaFile.exists()) {
-            createMobaArpgPreset().save(mobaFile)
-        }
-        val blankFile = File(dir, DEFAULT_BLANK_FILE)
-        if (!blankFile.exists()) {
-            createBlankCanvasPreset().save(blankFile)
+        val defaultPresets = mapOf(
+            DEFAULT_FPS_FILE to createDefaultFpsPreset(),
+            DEFAULT_MINECRAFT_FILE to createMinecraftJavaPreset(),
+            DEFAULT_ACTION_FILE to createDefaultActionPreset(),
+            DEFAULT_ARENA_FILE to createArenaShooterPreset(),
+            DEFAULT_MOBA_FILE to createMobaArpgPreset(),
+            DEFAULT_BLANK_FILE to createBlankCanvasPreset(),
+            "cmn_brub.json" to createDefaultFpsPreset().apply { gameName = "CMN BRUB" },
+            "warzone_mobile.json" to createDefaultFpsPreset().apply { gameName = "Warzone Mobile" },
+            "codm.json" to createDefaultFpsPreset().apply { gameName = "Call of Duty Mobile" },
+            "pubg_mobile.json" to createDefaultFpsPreset().apply { gameName = "PUBG Mobile" },
+            "free_fire.json" to createDefaultFpsPreset().apply { gameName = "Free Fire" },
+            "apex_legends.json" to createDefaultFpsPreset().apply { gameName = "Apex Legends Mobile" },
+            "fortnite.json" to createDefaultFpsPreset().apply { gameName = "Fortnite Mobile" },
+            "standoff2.json" to createDefaultFpsPreset().apply { gameName = "Standoff 2" },
+            "arena_breakout.json" to createDefaultFpsPreset().apply { gameName = "Arena Breakout" },
+            "blood_strike.json" to createDefaultFpsPreset().apply { gameName = "Blood Strike" },
+            "genshin_impact.json" to createMobaArpgPreset().apply { gameName = "Genshin Impact" },
+            "roblox.json" to createDefaultActionPreset().apply { gameName = "Roblox" },
+            "critical_ops.json" to createDefaultFpsPreset().apply { gameName = "Critical Ops" },
+            "modern_combat.json" to createDefaultFpsPreset().apply { gameName = "Modern Combat 5" },
+            "t3_arena.json" to createDefaultFpsPreset().apply { gameName = "T3 Arena" },
+            "rainbow_six.json" to createDefaultFpsPreset().apply { gameName = "Rainbow Six Mobile" },
+            "battlefield.json" to createDefaultFpsPreset().apply { gameName = "Battlefield Mobile" }
+        )
+        for ((fileName, preset) in defaultPresets) {
+            val file = File(dir, fileName)
+            if (!file.exists()) {
+                preset.save(file)
+            }
         }
     }
 
@@ -151,6 +158,23 @@ object ControlLayoutManager {
                     DEFAULT_ARENA_FILE -> "Tactical Arena Shooter"
                     DEFAULT_MOBA_FILE -> "MOBA / ARPG"
                     DEFAULT_BLANK_FILE -> "Blank Canvas"
+                    "cmn_brub.json" -> "CMN BRUB"
+                    "warzone_mobile.json" -> "Warzone Mobile"
+                    "codm.json" -> "Call of Duty Mobile"
+                    "pubg_mobile.json" -> "PUBG Mobile"
+                    "free_fire.json" -> "Free Fire"
+                    "apex_legends.json" -> "Apex Legends Mobile"
+                    "fortnite.json" -> "Fortnite Mobile"
+                    "standoff2.json" -> "Standoff 2"
+                    "arena_breakout.json" -> "Arena Breakout"
+                    "blood_strike.json" -> "Blood Strike"
+                    "genshin_impact.json" -> "Genshin Impact"
+                    "roblox.json" -> "Roblox"
+                    "critical_ops.json" -> "Critical Ops"
+                    "modern_combat.json" -> "Modern Combat 5"
+                    "t3_arena.json" -> "T3 Arena"
+                    "rainbow_six.json" -> "Rainbow Six Mobile"
+                    "battlefield.json" -> "Battlefield Mobile"
                     else -> "Custom Game Preset"
                 }
                 LayoutProfileInfo(
