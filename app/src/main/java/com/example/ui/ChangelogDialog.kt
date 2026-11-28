@@ -43,8 +43,18 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.5.0",
+        version = "v1.6.0",
         tag = "Latest",
+        items = listOf(
+            "Brand new Floating QWERTY Typing Keyboard (⌨) window for in-game text input, chat, and shortcuts.",
+            "Quick keyboard toggle button added directly to both the top floating bar and the Cogwheel menu.",
+            "Robust soft keyboard restoration (show_ime_with_hard_keyboard = 1) and uinput cleanup when stopping the overlay service.",
+            "Split /dev/uinput virtual mouse and keyboard devices ensuring 100% reliable WASD and key injection in GeForce NOW."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.5.0",
+        tag = "Stable",
         items = listOf(
             "Split /dev/uinput into two separate virtual devices (SwiftKeyM-VirtualMouse and SwiftKeyM-VirtualKeyboard) to fix Android EventHub classification bug where mouse axes suppressed keyboard events.",
             "All WASD joystick movement, keyboard keys, and function shortcuts now inject perfectly into GeForce NOW without being ignored.",
