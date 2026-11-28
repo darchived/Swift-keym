@@ -24,7 +24,7 @@ static int emit_syn(int fd) {
 }
 
 JNIEXPORT jint JNICALL
-Java_com_example_input_UinputBridge_nativeOpenUinput(JNIEnv *env, jclass clazz) {
+Java_com_example_input_UinputBridge_nativeOpenMouseUinput(JNIEnv *env, jclass clazz) {
     (void) env;
     (void) clazz;
 
@@ -55,11 +55,6 @@ Java_com_example_input_UinputBridge_nativeOpenUinput(JNIEnv *env, jclass clazz) 
     ioctl(fd, UI_SET_KEYBIT, BTN_RIGHT);
     ioctl(fd, UI_SET_KEYBIT, BTN_MIDDLE);
 
-    /* Standard Linux keyboard keycodes 1..248 */
-    for (int code = 1; code <= 248; code++) {
-        ioctl(fd, UI_SET_KEYBIT, code);
-    }
-
     int setup_ok = 0;
 #ifdef UI_DEV_SETUP
     struct uinput_setup usetup;
@@ -68,7 +63,7 @@ Java_com_example_input_UinputBridge_nativeOpenUinput(JNIEnv *env, jclass clazz) 
     usetup.id.vendor = 0x1234;
     usetup.id.product = 0x5678;
     usetup.id.version = 1;
-    snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "Swift KeyM Virtual Mouse");
+    snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "SwiftKeyM-VirtualMouse");
     if (ioctl(fd, UI_DEV_SETUP, &usetup) >= 0) {
         setup_ok = 1;
     }
@@ -77,7 +72,7 @@ Java_com_example_input_UinputBridge_nativeOpenUinput(JNIEnv *env, jclass clazz) 
     if (!setup_ok) {
         struct uinput_user_dev uidev;
         memset(&uidev, 0, sizeof(uidev));
-        snprintf(uidev.name, UINPUT_MAX_NAME_SIZE, "Swift KeyM Virtual Mouse");
+        snprintf(uidev.name, UINPUT_MAX_NAME_SIZE, "SwiftKeyM-VirtualMouse");
         uidev.id.bustype = BUS_USB;
         uidev.id.vendor = 0x1234;
         uidev.id.product = 0x5678;
@@ -96,6 +91,70 @@ Java_com_example_input_UinputBridge_nativeOpenUinput(JNIEnv *env, jclass clazz) 
     }
 
     /* Allow Android InputReader a moment to register the new virtual input device */
+    usleep(50000);
+    return fd;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_example_input_UinputBridge_nativeOpenKeyboardUinput(JNIEnv *env, jclass clazz) {
+    (void) env;
+    (void) clazz;
+
+    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) {
+        fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    }
+    if (fd < 0) {
+        return -errno;
+    }
+
+    if (ioctl(fd, UI_SET_EVBIT, EV_SYN) < 0 ||
+        ioctl(fd, UI_SET_EVBIT, EV_KEY) < 0) {
+        int err = errno;
+        close(fd);
+        return -err;
+    }
+
+    /* Standard Linux keyboard keycodes 1..248 */
+    for (int code = 1; code <= 248; code++) {
+        ioctl(fd, UI_SET_KEYBIT, code);
+    }
+
+    int setup_ok = 0;
+#ifdef UI_DEV_SETUP
+    struct uinput_setup usetup;
+    memset(&usetup, 0, sizeof(usetup));
+    usetup.id.bustype = BUS_USB;
+    usetup.id.vendor = 0x1234;
+    usetup.id.product = 0x5679;
+    usetup.id.version = 1;
+    snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "SwiftKeyM-VirtualKeyboard");
+    if (ioctl(fd, UI_DEV_SETUP, &usetup) >= 0) {
+        setup_ok = 1;
+    }
+#endif
+
+    if (!setup_ok) {
+        struct uinput_user_dev uidev;
+        memset(&uidev, 0, sizeof(uidev));
+        snprintf(uidev.name, UINPUT_MAX_NAME_SIZE, "SwiftKeyM-VirtualKeyboard");
+        uidev.id.bustype = BUS_USB;
+        uidev.id.vendor = 0x1234;
+        uidev.id.product = 0x5679;
+        uidev.id.version = 1;
+        if (write(fd, &uidev, sizeof(uidev)) != (ssize_t) sizeof(uidev)) {
+            int err = errno;
+            close(fd);
+            return -err;
+        }
+    }
+
+    if (ioctl(fd, UI_DEV_CREATE) < 0) {
+        int err = errno;
+        close(fd);
+        return -err;
+    }
+
     usleep(50000);
     return fd;
 }

@@ -43,8 +43,17 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
-        version = "v1.4.0",
+        version = "v1.5.0",
         tag = "Latest",
+        items = listOf(
+            "Split /dev/uinput into two separate virtual devices (SwiftKeyM-VirtualMouse and SwiftKeyM-VirtualKeyboard) to fix Android EventHub classification bug where mouse axes suppressed keyboard events.",
+            "All WASD joystick movement, keyboard keys, and function shortcuts now inject perfectly into GeForce NOW without being ignored.",
+            "Retained permanent swiftkeym-fixed.jks signing configuration for seamless in-place updates."
+        )
+    ),
+    ChangelogRelease(
+        version = "v1.4.0",
+        tag = "Stable",
         items = listOf(
             "Configured fixed static signing key (swiftkeym-fixed.jks) and debug assemble targets for flawless in-place updates without install errors.",
             "Registered full Linux keyboard keycodes (1..248) in /dev/uinput so all keyboard buttons and WASD joysticks inject correctly.",

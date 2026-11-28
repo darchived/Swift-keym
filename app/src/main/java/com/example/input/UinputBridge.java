@@ -7,8 +7,8 @@ import android.view.MotionEvent;
 
 /**
  * JNI wrapper for Linux /dev/uinput virtual mouse & keyboard injection.
- * Provides kernel-level BTN_LEFT (0x110), BTN_RIGHT (0x111), BTN_MIDDLE (0x112),
- * REL_X / REL_Y / REL_WHEEL, and Linux KEY_* injection for GeForce NOW pointer capture.
+ * Separates SwiftKeyM-VirtualMouse and SwiftKeyM-VirtualKeyboard into distinct uinput devices
+ * to bypass Android EventHub mouse-key classification bugs.
  */
 public final class UinputBridge {
     private static final String TAG = "UinputBridge";
@@ -155,12 +155,22 @@ public final class UinputBridge {
         return ANDROID_TO_LINUX_KEY.get(androidKeyCode, 0);
     }
 
-    public static int openDevice() {
+    public static int openMouseDevice() {
         if (!sNativeLoaded) return -1;
         try {
-            return nativeOpenUinput();
+            return nativeOpenMouseUinput();
         } catch (Throwable t) {
-            Log.w(TAG, "nativeOpenUinput threw", t);
+            Log.w(TAG, "nativeOpenMouseUinput threw", t);
+            return -1;
+        }
+    }
+
+    public static int openKeyboardDevice() {
+        if (!sNativeLoaded) return -1;
+        try {
+            return nativeOpenKeyboardUinput();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeOpenKeyboardUinput threw", t);
             return -1;
         }
     }
@@ -215,7 +225,8 @@ public final class UinputBridge {
         }
     }
 
-    private static native int nativeOpenUinput();
+    private static native int nativeOpenMouseUinput();
+    private static native int nativeOpenKeyboardUinput();
     private static native boolean nativeInjectMouseButton(int fd, int linuxButton, boolean down);
     private static native boolean nativeInjectMouseMove(int fd, int dx, int dy);
     private static native boolean nativeInjectMouseScroll(int fd, int vScroll, int hScroll);

@@ -22,8 +22,9 @@ public class ShizukuInputService extends IInputService.Stub {
     private Method injectInputEventMethod;
     private Method setActionButtonMethod;
 
-    // Primary kernel-level virtual USB mouse & keyboard (/dev/uinput)
-    private volatile int uinputFd = -1;
+    // Separate kernel virtual USB mouse & keyboard (/dev/uinput) file descriptors
+    private volatile int uinputMouseFd = -1;
+    private volatile int uinputKbdFd = -1;
     private volatile float uinputRelAccX = 0f;
     private volatile float uinputRelAccY = 0f;
 
@@ -40,13 +41,22 @@ public class ShizukuInputService extends IInputService.Stub {
     }
 
     private void initUinput() {
-        int fd = UinputBridge.openDevice();
-        if (fd >= 0) {
-            uinputFd = fd;
-            Log.i(TAG, "Registered kernel /dev/uinput virtual USB mouse & keyboard (fd=" + fd + ")");
+        int mouseFd = UinputBridge.openMouseDevice();
+        if (mouseFd >= 0) {
+            uinputMouseFd = mouseFd;
+            Log.i(TAG, "Registered kernel /dev/uinput virtual Mouse (fd=" + mouseFd + ")");
         } else {
-            uinputFd = -1;
-            Log.w(TAG, "/dev/uinput unavailable (code=" + fd + "), using InputManager fallback");
+            uinputMouseFd = -1;
+            Log.w(TAG, "Virtual Mouse /dev/uinput unavailable (code=" + mouseFd + ")");
+        }
+
+        int kbdFd = UinputBridge.openKeyboardDevice();
+        if (kbdFd >= 0) {
+            uinputKbdFd = kbdFd;
+            Log.i(TAG, "Registered kernel /dev/uinput virtual Keyboard (fd=" + kbdFd + ")");
+        } else {
+            uinputKbdFd = -1;
+            Log.w(TAG, "Virtual Keyboard /dev/uinput unavailable (code=" + kbdFd + ")");
         }
     }
 
@@ -119,9 +129,9 @@ public class ShizukuInputService extends IInputService.Stub {
             downTime = existing != null ? existing : now;
         }
 
-        // Primary backend: Linux /dev/uinput EV_KEY + EV_SYN
-        if (uinputFd >= 0 && UinputBridge.toLinuxKeyCode(keyCode) > 0) {
-            if (UinputBridge.injectKey(uinputFd, keyCode, down)) {
+        // Primary backend: Linux /dev/uinput dedicated Virtual Keyboard device
+        if (uinputKbdFd >= 0 && UinputBridge.toLinuxKeyCode(keyCode) > 0) {
+            if (UinputBridge.injectKey(uinputKbdFd, keyCode, down)) {
                 return;
             }
         }
@@ -188,8 +198,8 @@ public class ShizukuInputService extends IInputService.Stub {
             mouseButtonState = prevState & ~button;
         }
 
-        // Primary backend: /dev/uinput BTN_LEFT (0x110), BTN_RIGHT (0x111), BTN_MIDDLE (0x112) + EV_SYN
-        if (uinputFd >= 0 && UinputBridge.injectMouseButton(uinputFd, button, down)) {
+        // Primary backend: /dev/uinput Virtual Mouse device
+        if (uinputMouseFd >= 0 && UinputBridge.injectMouseButton(uinputMouseFd, button, down)) {
             return;
         }
 
@@ -230,8 +240,8 @@ public class ShizukuInputService extends IInputService.Stub {
     public synchronized void injectMouseMove(float dx, float dy) {
         if (dx == 0f && dy == 0f) return;
 
-        // Primary backend: /dev/uinput REL_X (0x00) / REL_Y (0x01) + EV_SYN
-        if (uinputFd >= 0) {
+        // Primary backend: /dev/uinput Virtual Mouse device
+        if (uinputMouseFd >= 0) {
             uinputRelAccX += dx;
             uinputRelAccY += dy;
             int ix = (int) uinputRelAccX;
@@ -239,7 +249,7 @@ public class ShizukuInputService extends IInputService.Stub {
             uinputRelAccX -= ix;
             uinputRelAccY -= iy;
             if (ix == 0 && iy == 0) return;
-            if (UinputBridge.injectMouseMove(uinputFd, ix, iy)) {
+            if (UinputBridge.injectMouseMove(uinputMouseFd, ix, iy)) {
                 return;
             }
         }
@@ -256,10 +266,10 @@ public class ShizukuInputService extends IInputService.Stub {
 
     @Override
     public synchronized void injectMouseScroll(float vScroll, float hScroll) {
-        if (uinputFd >= 0) {
+        if (uinputMouseFd >= 0) {
             int iv = Math.round(vScroll);
             int ih = Math.round(hScroll);
-            if ((iv != 0 || ih != 0) && UinputBridge.injectMouseScroll(uinputFd, iv, ih)) {
+            if ((iv != 0 || ih != 0) && UinputBridge.injectMouseScroll(uinputMouseFd, iv, ih)) {
                 return;
             }
         }
@@ -385,9 +395,13 @@ public class ShizukuInputService extends IInputService.Stub {
             resetAllInputs();
         } catch (Throwable ignored) {
         }
-        if (uinputFd >= 0) {
-            UinputBridge.closeDevice(uinputFd);
-            uinputFd = -1;
+        if (uinputMouseFd >= 0) {
+            UinputBridge.closeDevice(uinputMouseFd);
+            uinputMouseFd = -1;
+        }
+        if (uinputKbdFd >= 0) {
+            UinputBridge.closeDevice(uinputKbdFd);
+            uinputKbdFd = -1;
         }
         System.exit(0);
     }
