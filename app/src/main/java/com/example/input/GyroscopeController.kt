@@ -39,6 +39,7 @@ class GyroscopeController(private val context: Context) : SensorEventListener {
     @Volatile var paused: Boolean = false
     @Volatile var isTouchSwiping: Boolean = false
     @Volatile var adsZoomScale: Float = 1.0f
+    @Volatile var onDeltaListener: ((Float, Float) -> Unit)? = null
 
     private var isRegistered = false
     private var lastTimestampNs = 0L
@@ -120,7 +121,12 @@ class GyroscopeController(private val context: Context) : SensorEventListener {
         if (invertY) dy = -dy
 
         if (abs(dx) > 0.05f || abs(dy) > 0.05f) {
-            InputBridge.sendMouseMove(dx, dy)
+            val sink = onDeltaListener
+            if (sink != null) {
+                sink.invoke(dx, dy)
+            } else {
+                InputBridge.sendMouseMove(dx, dy)
+            }
         }
     }
 
@@ -145,7 +151,7 @@ class GyroscopeController(private val context: Context) : SensorEventListener {
     private fun mapAxesForDisplayRotation(gx: Float, gy: Float): Pair<Float, Float> {
         val rotation = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                context.display?.rotation ?: Surface.ROTATION_90
+                context.display.rotation
             } else {
                 @Suppress("DEPRECATION")
                 windowManager.defaultDisplay.rotation

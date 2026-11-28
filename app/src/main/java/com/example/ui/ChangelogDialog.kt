@@ -59,6 +59,15 @@ private data class ChangelogRelease(
 
 private val CHANGELOG_RELEASES = listOf(
     ChangelogRelease(
+        version = "v1.0.1-fixed",
+        tag = "Hotfix Release",
+        items = listOf(
+            "Full-Time Virtual Mouse with 3D Look + Cursor Mode: Seamless switching between 3D Aim Look Mode and Cursor / Menu Mode, plus Floating Eye (👁) View.GONE / View.VISIBLE toggling that preserves all control positions.",
+            "Zero-Conflict Touch + Gyro Additive Blending: Touch swipe deltas and hardware gyroscope deltas merge additively into the unified 120Hz (8ms) float remainder accumulator with 3px touch slop and zero camera jumps on ACTION_DOWN.",
+            "Clean Play Protect Release Signing: Non-debuggable release build with verified /dev/uinput teardown in OverlayService.onDestroy() so the system soft keyboard always restores cleanly."
+        )
+    ),
+    ChangelogRelease(
         version = "v1.0.0-Released",
         tag = "Official Release",
         items = listOf(

@@ -618,6 +618,9 @@ class OverlayService : Service() {
 
     private fun setupGyroscopeController() {
         val controller = GyroscopeController(this)
+        controller.onDeltaListener = { dx, dy ->
+            aimZoneView?.addGyroDelta(dx, dy)
+        }
         gyroController = controller
         syncGyroSettingsFromPrefs()
         if (controller.isHardwareSupported()) {
@@ -1346,6 +1349,7 @@ class OverlayService : Service() {
         gameWatcherJob?.cancel()
         serviceScope.cancel()
         antiRecoilHandler.removeCallbacksAndMessages(null)
+        gyroController?.onDeltaListener = null
         gyroController?.stop()
         gyroController = null
         InputBridge.setSpecialActionListener(null)
@@ -1376,6 +1380,10 @@ class OverlayService : Service() {
 
         radialWheelView?.dismissImmediate()
         radialWheelView = null
+
+        try {
+            ShizukuHelper.destroyUinput()
+        } catch (_: Throwable) {}
 
         try {
             ShizukuHelper.executeShellCommand("settings put secure show_ime_with_hard_keyboard 1")
@@ -1444,7 +1452,7 @@ class OverlayService : Service() {
         private var adsRampStartMs = 0L
         private var adsRampFrom = 1.0f
 
-        private var isFlushLoopRunning = false
+        @Volatile private var isFlushLoopRunning = false
         private val flushHandler = Handler(Looper.getMainLooper())
 
         private val flushRunnable = object : Runnable {
@@ -1482,8 +1490,11 @@ class OverlayService : Service() {
                         pendingDx -= intX.toFloat()
                         pendingDy -= intY.toFloat()
                     }
-                    if (activePointerId != MotionEvent.INVALID_POINTER_ID) {
+                    if (activePointerId != MotionEvent.INVALID_POINTER_ID || abs(pendingDx) >= 1f || abs(pendingDy) >= 1f) {
                         keepRunning = true
+                    }
+                    if (!keepRunning) {
+                        isFlushLoopRunning = false
                     }
                 }
                 if (sendX != 0 || sendY != 0) {
@@ -1492,10 +1503,8 @@ class OverlayService : Service() {
                 // Update Touch-to-Gyro hybrid zoom scale continuously
                 gyroController?.adsZoomScale = computeCurrentAdsZoomMultiplier()
 
-                if (isFlushLoopRunning && keepRunning) {
+                if (keepRunning && isFlushLoopRunning) {
                     flushHandler.postDelayed(this, 8L)
-                } else {
-                    isFlushLoopRunning = false
                 }
             }
         }
@@ -1519,17 +1528,22 @@ class OverlayService : Service() {
         }
 
         private fun startFlushLoop() {
-            if (!isFlushLoopRunning) {
-                isFlushLoopRunning = true
+            val shouldPost = synchronized(aimLock) {
+                if (!isFlushLoopRunning) {
+                    isFlushLoopRunning = true
+                    true
+                } else {
+                    false
+                }
+            }
+            if (shouldPost) {
                 flushHandler.post(flushRunnable)
             }
         }
 
         private fun stopFlushLoopAndClear() {
-            isFlushLoopRunning = false
-            flushHandler.removeCallbacks(flushRunnable)
-            gyroController?.isTouchSwiping = false
             synchronized(aimLock) {
+                isFlushLoopRunning = false
                 pendingDx = 0f
                 pendingDy = 0f
                 smoothedVelX = 0f
@@ -1541,9 +1555,20 @@ class OverlayService : Service() {
                 quickTurnPerTickDx = 0f
                 thumbDownDragAccumulator = 0f
             }
+            flushHandler.removeCallbacks(flushRunnable)
+            gyroController?.isTouchSwiping = false
         }
 
         @Volatile private var thumbDownDragAccumulator = 0f
+
+        fun addGyroDelta(gyroDx: Float, gyroDy: Float) {
+            if (isHudHidden || controlLayout?.isModifiable == true) return
+            synchronized(aimLock) {
+                pendingDx += gyroDx
+                pendingDy += gyroDy
+            }
+            startFlushLoop()
+        }
 
         fun performSmoothQuickTurn(degrees: Int) {
             val sensX = ControlLayoutManager.getAimSensX(context)
@@ -1621,8 +1646,10 @@ class OverlayService : Service() {
                         isDragging = false
                         gyroController?.isTouchSwiping = true
                         synchronized(aimLock) {
-                            pendingDx = 0f
-                            pendingDy = 0f
+                            if (isInertiaGliding || !ControlLayoutManager.isGyroEnabled(context)) {
+                                pendingDx = 0f
+                                pendingDy = 0f
+                            }
                             smoothedVelX = 0f
                             smoothedVelY = 0f
                             inertiaVelX = 0f

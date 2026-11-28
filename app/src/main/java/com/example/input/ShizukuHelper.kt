@@ -83,6 +83,10 @@ object ShizukuHelper {
         InputBridge.bindService(context)
     }
 
+    fun destroyUinput() {
+        InputBridge.destroyUinput()
+    }
+
     fun unbindInputService() {
         InputBridge.unbindService()
     }

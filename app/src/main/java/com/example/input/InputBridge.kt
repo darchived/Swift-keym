@@ -143,6 +143,7 @@ public object InputBridge {
 
     fun unbindService() {
         resetAll()
+        destroyUinput()
         val args = userServiceArgs
         if (args != null) {
             try {
@@ -153,6 +154,16 @@ public object InputBridge {
         }
         inputService = null
         _isServiceConnected.value = false
+    }
+
+    @JvmStatic
+    fun destroyUinput() {
+        val svc = inputService ?: return
+        try {
+            svc.destroyUinput()
+        } catch (e: RemoteException) {
+            Log.w(TAG, "destroyUinput failed", e)
+        }
     }
 
     fun setSpecialActionListener(listener: ((Int, Boolean) -> Unit)?) {

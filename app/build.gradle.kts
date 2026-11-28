@@ -16,8 +16,8 @@ android {
     applicationId = "com.stardevs.swiftkeym"
     minSdk = 26
     targetSdk = 34
-    versionCode = 100
-    versionName = "v1.0.0-Released"
+    versionCode = 101
+    versionName = "v1.0.1-fixed"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -158,4 +158,24 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
   // "ksp"(libs.androidx.room.compiler)
   // "ksp"(libs.moshi.kotlin.codegen)
+}
+
+afterEvaluate {
+  val versionStr = android.defaultConfig.versionName ?: "v1.0.1-fixed"
+  val targetName = "SwiftKeyM-${versionStr}.apk"
+  val releaseApkDir = layout.buildDirectory.dir("outputs/apk/release")
+  val destRootFile = rootProject.layout.projectDirectory.file(targetName).asFile
+  val exportNamedApk = tasks.register("exportNamedReleaseApk") {
+    doLast {
+      val dir = releaseApkDir.get().asFile
+      val candidate = listOf("app-release.apk", "app-release-unsigned.apk")
+        .map { File(dir, it) }
+        .firstOrNull { it.exists() }
+      if (candidate != null) {
+        candidate.copyTo(File(dir, targetName), overwrite = true)
+        candidate.copyTo(destRootFile, overwrite = true)
+      }
+    }
+  }
+  tasks.findByName("assembleRelease")?.finalizedBy(exportNamedApk)
 }

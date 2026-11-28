@@ -8,5 +8,6 @@ interface IInputService {
     void resetAllInputs() = 5;
     String execShell(String command) = 6;
     boolean allowOverlayAppOps(String packageName) = 7;
+    void destroyUinput() = 8;
     void destroy() = 16777114;
 }

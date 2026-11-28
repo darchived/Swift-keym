@@ -25,7 +25,7 @@ class ExampleRobolectricTest {
     fun `read app name and credits from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         assertEquals("Swift KeyM", context.getString(R.string.app_name))
-        assertEquals("Swift KeyM v1.0.0-Released • Created by St3rlight • Team StarDevs", context.getString(R.string.app_credits))
+        assertEquals("Swift KeyM v1.0.1-fixed • Created by St3rlight • Team StarDevs", context.getString(R.string.app_credits))
     }
 
     @Test
