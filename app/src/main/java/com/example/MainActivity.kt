@@ -109,6 +109,7 @@ import com.example.customcontrols.ShareBackupManager
 import com.example.input.InputBridge
 import com.example.input.ShizukuHelper
 import com.example.overlay.OverlayService
+import com.example.ui.AiAimAssistCard
 import com.example.ui.ChangelogDialog
 import com.example.ui.GameLauncherSection
 import com.example.ui.MacroBuilderDialog
@@ -1671,6 +1672,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+
+                    // AI Screen Vision Aim Assist (Macro) & Live Terminal
+                    AiAimAssistCard(onSyncOverlay = { notifyAimProfileSync() })
 
                     // Game Presets (controlmap/)
                     Card(

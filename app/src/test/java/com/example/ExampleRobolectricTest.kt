@@ -421,4 +421,103 @@ class ExampleRobolectricTest {
         up0.recycle()
         assertFalse(com.example.input.InputBridge.isPrimaryMouseDown)
     }
+
+    @Test
+    fun `ai aim assist preferences clamp strength between off and 0_5 to 5_0`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        ControlLayoutManager.setAiAimStrength(context, 0.0f)
+        assertEquals(0.0f, ControlLayoutManager.getAiAimStrength(context), 0.01f)
+
+        ControlLayoutManager.setAiAimStrength(context, 0.2f)
+        assertEquals(0.0f, ControlLayoutManager.getAiAimStrength(context), 0.01f)
+
+        ControlLayoutManager.setAiAimStrength(context, 2.5f)
+        assertEquals(2.5f, ControlLayoutManager.getAiAimStrength(context), 0.01f)
+
+        ControlLayoutManager.setAiAimStrength(context, 9.5f)
+        assertEquals(5.0f, ControlLayoutManager.getAiAimStrength(context), 0.01f)
+
+        ControlLayoutManager.setAiCrosshairGatePct(context, 0.80f)
+        assertEquals(0.40f, ControlLayoutManager.getAiCrosshairGatePct(context), 0.01f)
+
+        ControlLayoutManager.setAiCrosshairGatePct(context, 0.02f)
+        assertEquals(0.10f, ControlLayoutManager.getAiCrosshairGatePct(context), 0.01f)
+
+        ControlLayoutManager.setAiTeamFilterEnabled(context, false)
+        assertFalse(ControlLayoutManager.isAiTeamFilterEnabled(context))
+        ControlLayoutManager.setAiTeamFilterEnabled(context, true)
+        assertTrue(ControlLayoutManager.isAiTeamFilterEnabled(context))
+    }
+
+    @Test
+    fun `ai vision analyzer locks enemy red tag near crosshair skips teammates and respects gate`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        ControlLayoutManager.setAiAimStrength(context, 2.5f)
+        ControlLayoutManager.setAiCrosshairGatePct(context, 0.22f)
+        ControlLayoutManager.setAiTeamFilterEnabled(context, true)
+        ControlLayoutManager.setAiOcrNamesEnabled(context, false)
+        com.example.vision.AiVisionTerminalBus.clearLogs()
+
+        val w = 320
+        val h = 180
+        // 1. Enemy red nametag just right of center crosshair -> MUST steer right (+dx)
+        val enemyBmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        enemyBmp.eraseColor(android.graphics.Color.BLACK)
+        val canvas1 = android.graphics.Canvas(enemyBmp)
+        val redPaint = android.graphics.Paint().apply { color = android.graphics.Color.rgb(235, 35, 35) }
+        // Center is (160, 90). Place enemy red nametag at x=175..205, y=75..81 (inside 22% gate = 39.6px)
+        canvas1.drawRect(175f, 75f, 205f, 82f, redPaint)
+
+        var steeredDx = 0f
+        var steeredDy = 0f
+        var steerCount = 0
+        val analyzerEnemy = com.example.vision.AiAimVisionAnalyzer(context) { dx, dy ->
+            steeredDx += dx
+            steeredDy += dy
+            steerCount++
+        }
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(50))
+        analyzerEnemy.processBitmap(enemyBmp)
+        enemyBmp.recycle()
+
+        assertTrue("Expected steering toward nearby red enemy nametag", steerCount == 1 && steeredDx > 0.5f)
+        assertTrue(com.example.vision.AiVisionTerminalBus.activeTarget.value?.isLocked == true)
+
+        // 2. Red nametag surrounded by Warzone Cyan/Blue squad teammate guide -> MUST skip & NOT steer
+        val teamBmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        teamBmp.eraseColor(android.graphics.Color.BLACK)
+        val canvas2 = android.graphics.Canvas(teamBmp)
+        val cyanPaint = android.graphics.Paint().apply { color = android.graphics.Color.rgb(20, 195, 245) }
+        canvas2.drawRect(175f, 75f, 205f, 82f, redPaint)
+        canvas2.drawRect(160f, 68f, 174f, 84f, cyanPaint)
+
+        var teamSteerCount = 0
+        val analyzerTeam = com.example.vision.AiAimVisionAnalyzer(context) { _, _ ->
+            teamSteerCount++
+        }
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(50))
+        analyzerTeam.processBitmap(teamBmp)
+        teamBmp.recycle()
+
+        assertEquals(0, teamSteerCount)
+        assertTrue((com.example.vision.AiVisionTerminalBus.activeTarget.value?.teammatesSkipped ?: 0) >= 1)
+
+        // 3. Enemy red nametag far outside crosshair gate (x=65..95, y=40..46) -> MUST NOT steer
+        val farBmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        farBmp.eraseColor(android.graphics.Color.BLACK)
+        val canvas3 = android.graphics.Canvas(farBmp)
+        canvas3.drawRect(65f, 40f, 95f, 46f, redPaint)
+
+        var farSteerCount = 0
+        val analyzerFar = com.example.vision.AiAimVisionAnalyzer(context) { _, _ ->
+            farSteerCount++
+        }
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(50))
+        analyzerFar.processBitmap(farBmp)
+        farBmp.recycle()
+
+        assertEquals(0, farSteerCount)
+        assertFalse(com.example.vision.AiVisionTerminalBus.activeTarget.value?.isLocked == true)
+    }
 }

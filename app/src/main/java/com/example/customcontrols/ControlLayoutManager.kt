@@ -63,6 +63,10 @@ object ControlLayoutManager {
     private const val KEY_RECOIL_ADS_ONLY = "recoil_ads_only"
     private const val KEY_SAVED_MACROS_JSON = "saved_macros_json"
     private const val KEY_GAME_LINKS_JSON = "game_links_json"
+    private const val KEY_AI_AIM_STRENGTH = "ai_aim_assist_strength"
+    private const val KEY_AI_AIM_GATE_PCT = "ai_aim_gate_radius_pct"
+    private const val KEY_AI_TEAM_FILTER = "ai_aim_team_filter_enabled"
+    private const val KEY_AI_OCR_NAMES = "ai_aim_ocr_names_enabled"
     private const val DIR_CONTROLMAP = "controlmap"
     private const val DIR_ICONS = "control_icons"
 
@@ -755,6 +759,57 @@ object ControlLayoutManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_RECOIL_ADS_ONLY, adsOnly)
+            .apply()
+    }
+
+    /**
+     * AI Vision Aim Assist Strength: 0.0f = Off, otherwise 0.5f..5.0f.
+     */
+    fun getAiAimStrength(context: Context): Float {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AI_AIM_STRENGTH, 0.0f)
+        return if (raw < 0.25f) 0.0f else raw.coerceIn(0.5f, 5.0f)
+    }
+
+    fun setAiAimStrength(context: Context, strength: Float) {
+        val clean = if (strength < 0.25f) 0.0f else strength.coerceIn(0.5f, 5.0f)
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AI_AIM_STRENGTH, clean)
+            .apply()
+    }
+
+    fun getAiCrosshairGatePct(context: Context): Float =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_AI_AIM_GATE_PCT, 0.22f)
+            .coerceIn(0.10f, 0.40f)
+
+    fun setAiCrosshairGatePct(context: Context, pct: Float) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_AI_AIM_GATE_PCT, pct.coerceIn(0.10f, 0.40f))
+            .apply()
+    }
+
+    fun isAiTeamFilterEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AI_TEAM_FILTER, true)
+
+    fun setAiTeamFilterEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AI_TEAM_FILTER, enabled)
+            .apply()
+    }
+
+    fun isAiOcrNamesEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AI_OCR_NAMES, true)
+
+    fun setAiOcrNamesEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AI_OCR_NAMES, enabled)
             .apply()
     }
 

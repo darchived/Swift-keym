@@ -41,6 +41,7 @@ import com.example.customcontrols.CustomControls
 import com.example.customcontrols.ShareBackupManager
 import com.example.customcontrols.utils.ControlUtils
 import com.example.input.LwjglGlfwKeycode
+import com.example.vision.AiVisionTerminalBus
 import java.util.Locale
 
 /**
@@ -88,6 +89,19 @@ class FloatingSettingsDrawerView(
     private var rootWrapper: FrameLayout? = null
     private var rootParams: WindowManager.LayoutParams? = null
     private var currentPage = Page.MAIN
+
+    private val aiTerminalHandler = Handler(Looper.getMainLooper())
+    private var aiTerminalStatusTv: TextView? = null
+    private var aiTerminalTargetTv: TextView? = null
+    private var aiTerminalLogTv: TextView? = null
+
+    private val aiTerminalPollRunnable = object : Runnable {
+        override fun run() {
+            if (!isShowing || currentPage != Page.MAIN) return
+            updateAiTerminalViews()
+            aiTerminalHandler.postDelayed(this, 350L)
+        }
+    }
 
     val isShowing: Boolean
         get() = rootWrapper?.isAttachedToWindow == true
@@ -164,6 +178,10 @@ class FloatingSettingsDrawerView(
     }
 
     fun dismiss() {
+        aiTerminalHandler.removeCallbacks(aiTerminalPollRunnable)
+        aiTerminalStatusTv = null
+        aiTerminalTargetTv = null
+        aiTerminalLogTv = null
         val wrapper = rootWrapper
         rootWrapper = null
         rootParams = null
@@ -207,6 +225,10 @@ class FloatingSettingsDrawerView(
     }
 
     private fun buildPageIntoWrapper(wrapper: FrameLayout, page: Page) {
+        aiTerminalHandler.removeCallbacks(aiTerminalPollRunnable)
+        aiTerminalStatusTv = null
+        aiTerminalTargetTv = null
+        aiTerminalLogTv = null
         wrapper.removeAllViews()
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -749,7 +771,164 @@ class FloatingSettingsDrawerView(
         }
         addDivider(list)
 
-        // 4. GYRO SETTINGS
+        // 4. AI SCREEN VISION AIM ASSIST
+        addSectionHeader(list, "AI SCREEN VISION AIM ASSIST")
+        val aiStrength = ControlLayoutManager.getAiAimStrength(context)
+        val aiPresetIdx = when {
+            aiStrength < 0.25f -> 0
+            Math.abs(aiStrength - 1.2f) < 0.2f -> 1
+            Math.abs(aiStrength - 2.5f) < 0.2f -> 2
+            Math.abs(aiStrength - 4.2f) < 0.2f -> 3
+            else -> -1
+        }
+        addChipSelectorRow(
+            list,
+            labels = arrayOf("Off", "Low (1.2)", "Med (2.5)", "High (4.2)"),
+            selectedIndex = aiPresetIdx,
+            sp = sp
+        ) { idx ->
+            val v = when (idx) {
+                1 -> 1.2f
+                2 -> 2.5f
+                3 -> 4.2f
+                else -> 0.0f
+            }
+            ControlLayoutManager.setAiAimStrength(context, v)
+            callbacks.onAimProfileUpdated()
+            AiVisionTerminalBus.appendLog(
+                "DRAWER: AI Strength set to ${if (v < 0.5f) "OFF" else String.format(Locale.US, "%.1f", v)}"
+            )
+            refreshContent(Page.MAIN)
+        }
+
+        // Exact Off (0.0) -> 0.5..5.0 slider (46 steps: 0=OFF, 1..46=0.5..5.0)
+        run {
+            val box = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(sp / 2, sp / 2, sp / 2, sp / 2)
+            }
+            val curStep = if (aiStrength < 0.25f) 0 else (1 + Math.round((aiStrength - 0.5f) * 10f)).coerceIn(1, 46)
+            val tv = TextView(context).apply {
+                text = "AI Aim Strength: ${if (aiStrength < 0.5f) "OFF" else String.format(Locale.US, "%.1f / 5.0", aiStrength)}"
+                setTextColor(0xFFE0E0E0.toInt())
+                textSize = 12f
+            }
+            val seek = SeekBar(context).apply {
+                max = 46
+                progress = curStep
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                        if (!fromUser) return
+                        val next = if (progress <= 0) 0.0f else (0.5f + ((progress - 1) * 0.1f)).coerceIn(0.5f, 5.0f)
+                        tv.text = "AI Aim Strength: ${if (next < 0.5f) "OFF" else String.format(Locale.US, "%.1f / 5.0", next)}"
+                        ControlLayoutManager.setAiAimStrength(context, next)
+                        callbacks.onAimProfileUpdated()
+                    }
+                    override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                    override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                })
+            }
+            box.addView(tv)
+            box.addView(seek)
+            list.addView(box)
+        }
+
+        addFloatSliderRow(
+            list,
+            label = "Crosshair Gate",
+            min = 0.10f,
+            max = 0.40f,
+            step = 0.02f,
+            initial = ControlLayoutManager.getAiCrosshairGatePct(context),
+            sp = sp,
+            format = "%.0f%%",
+            displayAsPercent = true
+        ) { pct ->
+            ControlLayoutManager.setAiCrosshairGatePct(context, pct)
+        }
+
+        addSwitchRow(
+            list,
+            "Warzone Teammate Filter",
+            ControlLayoutManager.isAiTeamFilterEnabled(context),
+            sp
+        ) { checked ->
+            ControlLayoutManager.setAiTeamFilterEnabled(context, checked)
+        }
+
+        // Compact Live AI Vision Terminal directly below AI Aim Assist controls
+        val termBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(0xFF121212.toInt())
+                setStroke(1, 0x44FFFFFF)
+                cornerRadius = ControlUtils.dpToPx(context, 8f)
+            }
+            val tp = ControlUtils.dpToPx(context, 8f).toInt()
+            setPadding(tp, tp, tp, tp)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = sp / 2
+                bottomMargin = sp
+            }
+        }
+
+        val termHeader = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val termTitle = TextView(context).apply {
+            text = "AI VISION TERMINAL"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 10.5f
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val clearTermBtn = createPillButton("Clear", 0xFF2C2C2C.toInt(), 0xFFD0D0D0.toInt()).apply {
+            textSize = 10f
+            setOnClickListener {
+                AiVisionTerminalBus.clearLogs()
+                updateAiTerminalViews()
+            }
+        }
+        termHeader.addView(termTitle)
+        termHeader.addView(clearTermBtn)
+        termBox.addView(termHeader)
+
+        val statusTv = TextView(context).apply {
+            setTextColor(0xFF69F0AE.toInt())
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 4, 0, 2)
+        }
+        val targetTv = TextView(context).apply {
+            setTextColor(0xFFA8A8A8.toInt())
+            textSize = 9.5f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, 4)
+        }
+        val logsTv = TextView(context).apply {
+            setTextColor(0xFFE0E0E0.toInt())
+            textSize = 9.5f
+            typeface = Typeface.MONOSPACE
+        }
+        aiTerminalStatusTv = statusTv
+        aiTerminalTargetTv = targetTv
+        aiTerminalLogTv = logsTv
+
+        termBox.addView(statusTv)
+        termBox.addView(targetTv)
+        termBox.addView(logsTv)
+        list.addView(termBox)
+
+        updateAiTerminalViews()
+        aiTerminalHandler.postDelayed(aiTerminalPollRunnable, 350L)
+
+        addDivider(list)
+
+        // 5. GYRO SETTINGS
         addSectionHeader(list, "GYRO SETTINGS")
         addSwitchRow(
             list,
@@ -1375,6 +1554,32 @@ class FloatingSettingsDrawerView(
     private fun updateEnabledVisual(btn: Button, enabled: Boolean) {
         btn.isEnabled = enabled
         btn.alpha = if (enabled) 1.0f else 0.38f
+    }
+
+    private fun updateAiTerminalViews() {
+        val stTv = aiTerminalStatusTv ?: return
+        val tgTv = aiTerminalTargetTv ?: return
+        val lgTv = aiTerminalLogTv ?: return
+
+        val active = AiVisionTerminalBus.isScreenVisionActive.value
+        val headline = AiVisionTerminalBus.statusHeadline.value
+        val target = AiVisionTerminalBus.activeTarget.value
+        val logs = AiVisionTerminalBus.terminalLogs.value
+
+        stTv.text = if (active) "● $headline" else "○ $headline (Start in Main App)"
+        stTv.setTextColor(
+            when {
+                target?.isLocked == true -> 0xFFFF8A80.toInt()
+                active -> 0xFF69F0AE.toInt()
+                else -> 0xFFA8A8A8.toInt()
+            }
+        )
+        tgTv.text = if (target != null) {
+            "TARGET: ${target.targetName} | ${target.tagType} | OFF: (${target.dxPx},${target.dyPx})px | TEAM SKIP: ${target.teammatesSkipped}"
+        } else {
+            "TARGET: -- | TAG: NONE | OFF: (0,0)px | TEAM SKIP: 0"
+        }
+        lgTv.text = logs.takeLast(6).joinToString("\n")
     }
 
     private fun addDivider(parent: LinearLayout) {

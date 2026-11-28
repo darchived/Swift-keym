@@ -43,6 +43,7 @@ googleid = "1.1.1"
 shizuku = "13.1.5"
 gson = "2.11.0"
 exp4j = "0.4.8"
+mlkitTextRecognition = "16.0.1"
 
 
 [libraries]
@@ -101,6 +102,7 @@ shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuk
 shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 exp4j = { group = "net.objecthunter", name = "exp4j", version.ref = "exp4j" }
+mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 
 
 [plugins]

@@ -86,7 +86,7 @@ fun PrivacySafetyDialog(onDismiss: () -> Unit) {
                 )
                 SafetySectionCard(
                     title = "Least-Privilege Permissions",
-                    body = "Uses only Display Over Other Apps (for floating controls), Optional Notifications (foreground service status), and the zero-permission System Photo Picker for custom button icons."
+                    body = "Uses only Display Over Other Apps (for floating controls), Optional Notifications (foreground service status), Optional Screen Capture (100% local in-RAM AI Vision nametag detection—never recorded or sent), and the zero-permission System Photo Picker for custom icons."
                 )
                 SafetySectionCard(
                     title = "Play Protect & Restricted Settings",

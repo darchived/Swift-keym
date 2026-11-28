@@ -46,6 +46,8 @@ import com.example.input.InputBridge
 import com.example.input.LwjglGlfwKeycode
 import com.example.input.MacroEngine
 import com.example.input.ShizukuHelper
+import com.example.vision.AiVisionTerminalBus
+import com.example.vision.ScreenAssistService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -342,6 +344,9 @@ class OverlayService : Service() {
         updateScreenDimensions()
         ShizukuHelper.init()
         ShizukuHelper.bindInputService(this)
+        ScreenAssistService.steerSink = { dx, dy ->
+            aimZoneView?.addAiAssistDelta(dx, dy)
+        }
         antiRecoilHandler.postDelayed(antiRecoilRunnable, 16L)
     }
 
@@ -970,7 +975,13 @@ class OverlayService : Service() {
             else -> "PASS"
         }
         val gyroTag = if (ControlLayoutManager.isGyroEnabled(this)) " • GYRO" else ""
-        tv.text = "$shizukuDot $slot • $mode($zoom)$gyroTag"
+        val aiStr = ControlLayoutManager.getAiAimStrength(this)
+        val aiTag = if (AiVisionTerminalBus.isScreenVisionActive.value && aiStr >= 0.5f) {
+            String.format(java.util.Locale.US, " • AI:%.1f", aiStr)
+        } else {
+            ""
+        }
+        tv.text = "$shizukuDot $slot • $mode($zoom)$gyroTag$aiTag"
     }
 
     private fun releaseAllKeysPanic() {
@@ -1352,6 +1363,7 @@ class OverlayService : Service() {
         gyroController?.onDeltaListener = null
         gyroController?.stop()
         gyroController = null
+        ScreenAssistService.steerSink = null
         InputBridge.setSpecialActionListener(null)
         InputBridge.setMenuKeyListener(null)
         InputBridge.setWeaponSlotListener(null)
@@ -1566,6 +1578,15 @@ class OverlayService : Service() {
             synchronized(aimLock) {
                 pendingDx += gyroDx
                 pendingDy += gyroDy
+            }
+            startFlushLoop()
+        }
+
+        fun addAiAssistDelta(aiDx: Float, aiDy: Float) {
+            if (isHudHidden || controlLayout?.isModifiable == true || isFreeLookActive) return
+            synchronized(aimLock) {
+                pendingDx += aiDx
+                pendingDy += aiDy
             }
             startFlushLoop()
         }
